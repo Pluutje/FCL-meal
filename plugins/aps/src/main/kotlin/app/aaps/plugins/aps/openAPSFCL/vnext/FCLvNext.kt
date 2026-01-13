@@ -1,6 +1,7 @@
 package app.aaps.plugins.aps.openAPSFCL.vnext
 
 
+import android.annotation.SuppressLint
 import org.joda.time.DateTime
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextCsvLogger
@@ -1813,7 +1814,7 @@ class FCLvNext(
     }
 
 
-    fun getAdvice(input: FCLvNextInput): FCLvNextAdvice {
+    @SuppressLint("SuspiciousIndentation") fun getAdvice(input: FCLvNextInput): FCLvNextAdvice {
          // reset reserve logging per cycle
         reserveActionThisCycle = "NONE"
         reserveDeltaThisCycle = 0.0
