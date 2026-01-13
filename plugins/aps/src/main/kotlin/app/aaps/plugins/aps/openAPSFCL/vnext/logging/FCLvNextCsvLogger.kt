@@ -28,6 +28,8 @@ object FCLvNextCsvLogger {
         // ── Trends ──
         "slope",
         "accel",
+        "recent_slope",
+        "recent_delta5m",
         "consistency",
 
         // ── Model ──
@@ -117,6 +119,8 @@ object FCLvNextCsvLogger {
         // trends
         slope: Double,
         accel: Double,
+        recentSlope: Double,
+        recentDelta5m: Double,
         consistency: Double,
 
         // IOB
@@ -221,6 +225,8 @@ object FCLvNextCsvLogger {
                 // trends
                 t2(slope),
                 a2(accel),
+                t2(recentSlope),
+                t2(recentDelta5m),
                 t2(consistency),
 
                 // model

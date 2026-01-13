@@ -5,34 +5,26 @@ import org.joda.time.Minutes
 import kotlin.math.abs
 import kotlin.math.sign
 
-/**
- * PURE TREND ENGINE
- * Input: BG tijdserie (mmol/L)
- * Output: robuuste trendkenmerken
- */
 object FCLvNextTrends {
-
-    // ─────────────────────────────────────────────
-    // DATA TYPES
-    // ─────────────────────────────────────────────
 
     data class BGPoint(
         val time: DateTime,
-        val bg: Double          // mmol/L
+        val bg: Double
     )
 
     data class RobustTrendAnalysis(
-        val firstDerivative: Double,    // mmol/L per uur
-        val secondDerivative: Double,   // mmol/L per uur²
-        val consistency: Double,        // 0..1
-        val directionConsistency: Double, // 0..1
-        val magnitudeConsistency: Double, // 0..1
+        // SLOW lane (EWMA)
+        val firstDerivative: Double,        // mmol/L per uur
+        val secondDerivative: Double,       // mmol/L per uur²
+        val consistency: Double,            // 0..1
+        val directionConsistency: Double,   // 0..1
+        val magnitudeConsistency: Double,   // 0..1
         val phase: Phase,
-        // ✅ NEW: short-term direction (fast lane)
-        val recentSlope: Double,        // mmol/L per uur (laatste segment)
-        val recentDelta5m: Double       // mmol/L per 5 min (genormaliseerd)
-    )
 
+        // FAST lane (RAW CGM)
+        val recentSlope: Double,            // mmol/L per uur (laatste segment)
+        val recentDelta5m: Double           // mmol/L per 5 min (genormaliseerd)
+    )
 
     enum class Phase {
         RISING,
@@ -43,148 +35,120 @@ object FCLvNextTrends {
         UNKNOWN
     }
 
-    // ─────────────────────────────────────────────
-    // PUBLIC ENTRY POINT
-    // ─────────────────────────────────────────────
+    fun calculateTrends(
+        rawData: List<BGPoint>,
+        filteredData: List<BGPoint>
+    ): RobustTrendAnalysis {
 
-    fun calculateTrends(data: List<BGPoint>): RobustTrendAnalysis {
-        if (data.size < 5) {
+        // ✅ Forceer chronologische volgorde (oud → nieuw)
+        val raw = rawData.sortedBy { it.time.millis }
+        val filtered = filteredData.sortedBy { it.time.millis }
+
+        if (filtered.size < 5 || raw.size < 2) {
             return RobustTrendAnalysis(
-                firstDerivative = 0.0,
-                secondDerivative = 0.0,
-                consistency = 0.0,
-                directionConsistency = 0.0,
-                magnitudeConsistency = 0.0,
-                phase = Phase.UNKNOWN,
-                recentSlope = 0.0,
-                recentDelta5m = 0.0
+                0.0, 0.0, 0.0, 0.0, 0.0, Phase.UNKNOWN, 0.0, 0.0
             )
         }
 
-        val slopes = calculateSlopes(data)
-        val first = slopes.average()
+        // ── SLOW lane (EWMA) ──
+        val slopes = calculateSlopes(filtered)
+        val first = if (slopes.isNotEmpty()) slopes.average() else 0.0
         val second = calculateSecondDerivative(slopes)
 
         val dirConsistency = calculateDirectionConsistency(slopes)
         val magConsistency = calculateMagnitudeConsistency(slopes)
 
-        val consistency = (dirConsistency * 0.6 + magConsistency * 0.4)
-            .coerceIn(0.0, 1.0)
+        val consistency =
+            (0.6 * dirConsistency + 0.4 * magConsistency)
+                .coerceIn(0.0, 1.0)
 
         val phase = determinePhase(first, second, consistency)
 
-        val recentSlope = calculateRecentSlope(data)
-
-
-        val recent = calculateRecentSlope(data)
+        // ── FAST lane (RAW CGM) ──
+        val fast = calculateRecentRaw(raw)
 
         return RobustTrendAnalysis(
-            firstDerivative = first,
-            secondDerivative = second,
-            consistency = consistency,
-            directionConsistency = dirConsistency,
-            magnitudeConsistency = magConsistency,
-            phase = phase,
-            recentSlope = recent.recentSlope,
-            recentDelta5m = recent.recentDelta5m
+            first, second, consistency,
+            dirConsistency, magConsistency, phase,
+            fast.recentSlope, fast.recentDelta5m
         )
     }
 
-    // ─────────────────────────────────────────────
-    // INTERNAL HELPERS
-    // ─────────────────────────────────────────────
-
-    private data class RecentTrend(
-        val recentSlope: Double,    // mmol/L per uur
-        val recentDelta5m: Double   // mmol/L per 5 min (genormaliseerd)
+    private data class RecentRaw(
+        val recentSlope: Double,
+        val recentDelta5m: Double
     )
 
-    private fun calculateRecentSlope(data: List<BGPoint>): RecentTrend {
-        if (data.size < 2) return RecentTrend(0.0, 0.0)
+    private fun calculateRecentRaw(data: List<BGPoint>): RecentRaw {
+        if (data.size < 2) return RecentRaw(0.0, 0.0)
 
+        // ✅ Pak de nieuwste 2 punten (na sorting is dit echt CGM-last-two)
+        val b = data.last()
         val a = data[data.size - 2]
-        val b = data[data.size - 1]
 
         val dtMin = Minutes.minutesBetween(a.time, b.time).minutes
-        if (dtMin <= 0) return RecentTrend(0.0, 0.0)
+        if (dtMin <= 0) return RecentRaw(0.0, 0.0)
 
-        val delta = b.bg - a.bg
+        val delta = b.bg - a.bg                 // exact wat jij op CGM ziet
         val slopeHr = delta / (dtMin / 60.0)
-
-        // delta per 5 min, genormaliseerd (handig voor thresholds)
         val delta5m = delta * (5.0 / dtMin.toDouble())
 
-        return RecentTrend(
+        return RecentRaw(
             recentSlope = slopeHr,
             recentDelta5m = delta5m
         )
     }
 
-
-
-
-    private fun calculateSlopes(data: List<BGPoint>): List<Double> {
+    private fun calculateSlopes(dataChronological: List<BGPoint>): List<Double> {
         val slopes = mutableListOf<Double>()
 
-        for (i in 1 until data.size) {
-            val dtMin = Minutes.minutesBetween(data[i - 1].time, data[i].time).minutes
+        for (i in 1 until dataChronological.size) {
+            val prev = dataChronological[i - 1]
+            val curr = dataChronological[i]
+
+            val dtMin = Minutes.minutesBetween(prev.time, curr.time).minutes
             if (dtMin <= 0) continue
 
-            val dtHr = dtMin / 60.0
-            val delta = data[i].bg - data[i - 1].bg
-            slopes.add(delta / dtHr)
+            val delta = curr.bg - prev.bg
+            val slopeHr = delta / (dtMin / 60.0)
+            slopes.add(slopeHr)
         }
 
         return slopes
     }
 
     private fun calculateSecondDerivative(slopes: List<Double>): Double {
-        if (slopes.size < 3) return 0.0
-
-        val accel = mutableListOf<Double>()
-        for (i in 1 until slopes.size) {
-            accel.add(slopes[i] - slopes[i - 1])
-        }
-        return accel.average()
+        // ✅ Voorkom NaN als slopes < 2
+        if (slopes.size < 2) return 0.0
+        return slopes.zipWithNext { a, b -> b - a }.average()
     }
 
     private fun calculateDirectionConsistency(slopes: List<Double>): Double {
         if (slopes.isEmpty()) return 0.0
-
         val signs = slopes.map { sign(it) }.filter { it != 0.0 }
         if (signs.isEmpty()) return 0.0
-
-        val dominant = signs.groupingBy { it }.eachCount().maxByOrNull { it.value }!!
+        val dominant = signs.groupingBy { it }.eachCount().maxByOrNull { it.value } ?: return 0.0
         return dominant.value.toDouble() / signs.size
     }
 
     private fun calculateMagnitudeConsistency(slopes: List<Double>): Double {
         if (slopes.size < 2) return 0.0
-
         val mags = slopes.map { abs(it) }
         val avg = mags.average()
         if (avg == 0.0) return 0.0
-
-        val deviations = mags.map { abs(it - avg) / avg }
-        val stability = 1.0 - deviations.average()
-
-        return stability.coerceIn(0.0, 1.0)
+        return (1.0 - mags.map { abs(it - avg) / avg }.average())
+            .coerceIn(0.0, 1.0)
     }
 
-    private fun determinePhase(
-        first: Double,
-        second: Double,
-        consistency: Double
-    ): Phase {
+    private fun determinePhase(first: Double, second: Double, consistency: Double): Phase {
         if (consistency < 0.3) return Phase.UNKNOWN
-
         return when {
             first > 0.3 && second > 0.1 -> Phase.ACCELERATING_UP
             first < -0.3 && second < -0.1 -> Phase.ACCELERATING_DOWN
             first > 0.2 -> Phase.RISING
-            first < -0.2     -> Phase.FALLING
+            first < -0.2 -> Phase.FALLING
             abs(first) < 0.2 -> Phase.STABLE
-            else             -> Phase.UNKNOWN
+            else -> Phase.UNKNOWN
         }
     }
 }

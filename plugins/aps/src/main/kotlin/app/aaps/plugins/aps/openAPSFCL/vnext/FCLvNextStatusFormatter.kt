@@ -255,7 +255,7 @@ ${metricsText ?: "Nog geen data"}
 
         return """
 ════════════════════════
- 🧠 FCL vNext v1.2.0 
+ 🧠 FCL vNext v1.7.2
 ════════════════════════
 • Profiel              : ${prefs.get(StringKey.fcl_vnext_profile)}
 • Meal Detect Speed  : ${prefs.get(StringKey.fcl_vnext_meal_detect_speed)}
