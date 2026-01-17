@@ -20,6 +20,18 @@ class FCLMetrics(
     private val preferences: Preferences,
     private val persistenceLayer: PersistenceLayer   // ← NIEUW
 ) {
+    // ─────────────────────────────────────────────
+    // UI / LEARNING METRICS UPDATE THROTTLING
+    // ─────────────────────────────────────────────
+    private var lastUiMetricsUpdateAt: DateTime? = null
+    private val UI_METRICS_UPDATE_INTERVAL_MIN_DAY = 15
+    private val UI_METRICS_UPDATE_INTERVAL_MIN_NIGHT = 60
+
+    private var lastUserStatsUpdateAt: DateTime? = null
+
+    // update-intervals
+    private val USER_STATS_UPDATE_MIN_DAY = 15
+    private val USER_STATS_UPDATE_MIN_NIGHT = 60
 
     // ─────────────────────────────────────────────
     // PUBLIC API (wat FCL / UI nodig heeft)
@@ -33,7 +45,11 @@ class FCLMetrics(
     }
 
 
-    fun getUserStatsString(): String = optimizationController.getUserStatsString()
+    fun getUserStatsString(isNight: Boolean): String {
+        maybeUpdateUserStatsCache(isNight)
+        return optimizationController.getUserStatsString(isNight)
+    }
+
 
     /**
      * Wordt aangeroepen vanuit FCL (mag no-op zijn voor nu).
@@ -51,11 +67,12 @@ class FCLMetrics(
                 iob = currentIOB,
                 target = target
             )
-            optimizationController.updateUserStatsCache()
+            // geen zware stats update hier
         } catch (_: Exception) {
             // nooit crashen
         }
     }
+
 
 
     /**
@@ -317,8 +334,8 @@ class FCLMetrics(
             )
         }
 
-        fun getUserStatsString(): String {
-            if (userStatsCache == null) updateUserStatsCache()
+        fun getUserStatsString(isNight: Boolean): String {
+            maybeUpdateUserStatsCache(isNight)
             val cache = userStatsCache ?: return "Statistieken worden verzameld…"
 
             val dq24 = cache.dataQuality24h
@@ -474,8 +491,32 @@ class FCLMetrics(
 
 
 
+    private fun forceUpdateUserStatsCache() {
+        optimizationController.updateUserStatsCache()
+        lastUserStatsUpdateAt = DateTime.now()
+    }
+
+    private fun maybeUpdateUserStatsCache(isNight: Boolean) {
+        val now = DateTime.now()
+        val last = lastUserStatsUpdateAt
+
+        val intervalMin =
+            if (isNight) USER_STATS_UPDATE_MIN_NIGHT
+            else USER_STATS_UPDATE_MIN_DAY
+
+        if (last == null || Minutes.minutesBetween(last, now).minutes >= intervalMin) {
+            optimizationController.updateUserStatsCache()
+            lastUserStatsUpdateAt = now
+        }
+    }
+
+
+
 
     fun buildLearningSnapshot(isNight: Boolean): LearningMetricsSnapshot? {
+        // Learning wil altijd verse stats (maar throttled)
+        maybeUpdateUserStatsCache(isNight)
+
         val cache = optimizationController.userStatsCache
             ?: return null
 
@@ -493,6 +534,8 @@ class FCLMetrics(
             timestampMillis = cache.lastUpdated.millis
         )
     }
+
+
 
 
 

@@ -17,7 +17,15 @@ class ParameterLearningStats {
         val map = if (isNight) nightStats else dayStats
         val s = map.getOrPut(parameter) { Stat() }
 
-        val alpha = 0.12
+        val spec = LearningParameterSpecs.specs[parameter]
+
+        val alpha =
+            when (spec?.domain) {
+                LearningDomain.TIMING -> 0.18   // sneller leren
+                LearningDomain.HEIGHT -> 0.08   // trager, veiliger
+                else -> 0.12
+            }
+
         s.ema = (1 - alpha) * s.ema + alpha * direction
         s.count++
     }

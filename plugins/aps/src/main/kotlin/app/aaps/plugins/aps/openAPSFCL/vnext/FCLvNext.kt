@@ -12,6 +12,7 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextLearningEpisodeMan
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextLearningPersistence
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.LearningMetricsSnapshot
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextLearningAdjuster
+import app.aaps.plugins.aps.openAPSFCL.vnext.learning.LearningAdvice
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.LearningParameter
 
 data class FCLvNextInput(
@@ -291,6 +292,46 @@ private var reserveCause: ReserveCause? = null
 // logging helpers (reset per cycle)
 private var reserveActionThisCycle: String = "NONE"
 private var reserveDeltaThisCycle: Double = 0.0
+
+// ─────────────────────────────────────────────
+// ⚡ FAST-CARB micro ramp (earlier IOB without commit)
+// thresholds tuned from your CSV sample
+// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// 🍽️ MEAL micro ramp (earlier IOB for NORMAL meals)
+// ─────────────────────────────────────────────
+private const val MEAL_RISE_DELTA5M = 0.06      // mmol/5m  (vroeg, “normale” start)
+private const val MEAL_RISE_SLOPE_HR = 1.0      // mmol/L/h
+private const val MEAL_RISE_ACCEL = 0.08        // mmol/L/h^2
+
+private const val MEAL_ABORT_DELTA5M = -0.04
+private const val MEAL_ABORT_SLOPE_HR = -0.15
+private const val MEAL_ABORT_ACCEL = -0.06
+
+private const val MEAL_MICRO_MIN_U = 0.05
+private const val MEAL_MICRO_MAX_U = 0.12
+
+// ─────────────────────────────────────────────
+// ⚡ FAST micro ramp (snelle carbs → iets hoger, maar strakker abort)
+// ─────────────────────────────────────────────
+private const val FAST_RISE_DELTA5M = 0.20      // mmol/5m  (echte snelle stijging)
+private const val FAST_RISE_SLOPE_HR = 2.8      // mmol/L/h
+private const val FAST_RISE_ACCEL = 0.14        // mmol/L/h^2
+
+private const val FAST_ABORT_DELTA5M = -0.03
+private const val FAST_ABORT_SLOPE_HR = -0.12
+private const val FAST_ABORT_ACCEL = -0.05
+
+private const val FAST_MICRO_MIN_U = 0.08
+private const val FAST_MICRO_MAX_U = 0.15
+
+// ─────────────────────────────────────────────
+// Veiligheid / gating
+// ─────────────────────────────────────────────
+private const val MICRO_IOB_MAX = 0.45          // micro ramp alleen als er nog ruimte is
+private const val MICRO_MIN_CONS = 0.45
+
+
 
 
 
@@ -1184,6 +1225,99 @@ private fun predictBg60(ctx: FCLvNextContext): Double {
     return ctx.input.bgNow + ctx.slope * h + 0.5 * ctx.acceleration * h * h
 }
 
+private data class MicroRampResult(
+    val active: Boolean,
+    val microU: Double,
+    val tier: String,
+    val reason: String
+)
+
+private fun computeMicroRamp(ctx: FCLvNextContext): MicroRampResult {
+
+    // algemene safety: meteen stoppen als fast lane draait
+    val hardAbort =
+        ctx.recentDelta5m <= MEAL_ABORT_DELTA5M ||
+            ctx.recentSlope <= MEAL_ABORT_SLOPE_HR ||
+            ctx.acceleration <= MEAL_ABORT_ACCEL
+
+    if (hardAbort) {
+        return MicroRampResult(false, 0.0, "NONE", "MICRO blocked (abort)")
+    }
+
+    val safe =
+        ctx.consistency >= MICRO_MIN_CONS &&
+            ctx.iobRatio <= MICRO_IOB_MAX &&
+            ctx.recentDelta5m > 0.0
+
+    if (!safe) {
+        return MicroRampResult(false, 0.0, "NONE", "MICRO none (safe=false)")
+    }
+
+    // Tier detectie
+    val fast =
+        ctx.recentDelta5m >= FAST_RISE_DELTA5M ||
+            (ctx.recentSlope >= FAST_RISE_SLOPE_HR && ctx.acceleration >= FAST_RISE_ACCEL)
+
+    val meal =
+        // alleen zinvol als we echt boven target zitten
+        ctx.deltaToTarget >= 0.8 && (
+            // eerder triggeren op fast-lane rise
+            ctx.recentDelta5m >= 0.06 ||
+                ctx.recentSlope >= 0.60 ||
+                (ctx.recentSlope >= MEAL_RISE_SLOPE_HR && ctx.acceleration >= MEAL_RISE_ACCEL) ||
+                (ctx.recentDelta5m >= MEAL_RISE_DELTA5M)
+            )
+
+
+    if (!fast && !meal) {
+        return MicroRampResult(false, 0.0, "NONE", "MICRO none")
+    }
+
+    // Extra strakke abort alleen voor FAST-tier
+    if (fast) {
+        val fastAbort =
+            ctx.recentDelta5m <= FAST_ABORT_DELTA5M ||
+                ctx.recentSlope <= FAST_ABORT_SLOPE_HR ||
+                ctx.acceleration <= FAST_ABORT_ACCEL
+
+        if (fastAbort) {
+            return MicroRampResult(false, 0.0, "FAST", "FAST-MICRO blocked (fast abort)")
+        }
+    }
+
+    // Schalen: we schalen op recentDelta5m (stabielste snelle indicator)
+    val minU: Double
+    val maxU: Double
+    val t0: Double
+    val t1: Double
+    val tierName: String
+
+    if (fast) {
+        minU = FAST_MICRO_MIN_U
+        maxU = FAST_MICRO_MAX_U
+        t0 = FAST_RISE_DELTA5M
+        t1 = 0.55
+        tierName = "FAST"
+    } else {
+        minU = MEAL_MICRO_MIN_U
+        maxU = MEAL_MICRO_MAX_U
+        t0 = MEAL_RISE_DELTA5M
+        t1 = 0.35
+        tierName = "MEAL"
+    }
+
+
+    val tt = smooth01((ctx.recentDelta5m - t0) / (t1 - t0))
+    val micro = (minU + (maxU - minU) * tt).coerceIn(minU, maxU)
+
+    return MicroRampResult(
+        active = true,
+        microU = micro,
+        tier = tierName,
+        reason = "MICRO-$tierName: Δ5m=${"%.2f".format(ctx.recentDelta5m)} slope=${"%.2f".format(ctx.recentSlope)} accel=${"%.2f".format(ctx.acceleration)} iobR=${"%.2f".format(ctx.iobRatio)}"
+    )
+}
+
 
 
 
@@ -1732,17 +1866,27 @@ class FCLvNext(
     private val learningEpisodes = FCLvNextLearningEpisodeManager()
 
     private val learningAdvisor = FCLvNextLearningAdvisor()
+
     fun getLearningStatus(isNight: Boolean): String {
         return learningAdvisor.getLearningStatus(isNight)
     }
+
+    fun getLearningAdvice(isNight: Boolean): List<LearningAdvice> {
+        return learningAdvisor.getAdvice(isNight)
+    }
+
+    fun getLearningPhase(): String {
+        return learningAdvisor.getLearningPhase().name
+    }
+
+    fun getUiLearningAdvice(isNight: Boolean): List<LearningAdvice> =
+        learningAdvisor.getUiAdvice(isNight)
+
 
 
     fun pushLearningMetrics(snapshot: LearningMetricsSnapshot) {
         learningAdvisor.onMetricsSnapshot(snapshot)
     }
-
-    private val learningAdjuster =
-        FCLvNextLearningAdjuster(learningAdvisor)
 
 
     private val learningPersistence = FCLvNextLearningPersistence(preferences)
@@ -1822,6 +1966,11 @@ class FCLvNext(
         // 1️⃣ Config & context (trends, IOB, delta)
         // ─────────────────────────────────────────────
         val config = loadFCLvNextConfig(preferences, input.isNight)
+        val learningAdjuster =
+            FCLvNextLearningAdjuster(
+                advisor = learningAdvisor,
+                phase = learningAdvisor.getLearningPhase()
+            )
 
         val kDeltaEff =
             config.kDelta *
@@ -2141,8 +2290,32 @@ class FCLvNext(
 
         val postPeak = evaluatePostPeak(ctx, mealSignal, peak, now, config)
         status.append(postPeak.reason + "\n")
-        // ===============================================================================
+
         val suppressForPeak = postPeak.suppress
+
+// ─────────────────────────────────────────────
+// 🍽️ MICRO RAMP (earlier IOB, no commit)
+// ─────────────────────────────────────────────
+        val microRamp = computeMicroRamp(ctx)
+        status.append(microRamp.reason + "\n")
+
+        if (
+            microRamp.active &&
+            !suppressForPeak &&
+            !postPeak.lockout
+        ) {
+            // Respecteer ACCESS-cap (MICRO_ONLY/SMALL/NORMAL)
+            val microCapped = minOf(microRamp.microU, accessCap)
+
+            if (microCapped > 0.0 && finalDose < microCapped) {
+                status.append(
+                    "MICRO APPLY (${microRamp.tier}): ${"%.2f".format(finalDose)}→${"%.2f".format(microCapped)}U\n"
+                )
+                finalDose = microCapped
+            }
+        }
+
+
         // ─────────────────────────────────────────────
         // 🟡 PRE-MEAL RISE MICRO-FLOOR (laatste vangnet)
         // ─────────────────────────────────────────────
@@ -2327,6 +2500,30 @@ class FCLvNext(
 
         val commitAllowed = canCommitNow(now, config)
 
+// ─────────────────────────────────────────────
+// 🧠 LEARNING: commit fraction (single source)
+// ─────────────────────────────────────────────
+        var commitBaseMin = 0.0
+        var commitMul = 1.0
+        var commitEffMin = 0.0
+
+        val commitFraction =
+            if (mealSignal.state != MealState.NONE) {
+                computeCommitFraction(
+                    signal = mealSignal,
+                    config = config,
+                    adjuster = learningAdjuster,
+                    isNight = input.isNight
+                ) { dbg ->
+                    commitBaseMin = dbg.baseMin
+                    commitMul = dbg.multiplier
+                    commitEffMin = dbg.effectiveMin
+                }
+            } else {
+                0.0
+            }
+
+
         var didCommitThisCycle = false
 
         status.append(mealSignal.reason + "\n")
@@ -2426,20 +2623,14 @@ class FCLvNext(
 
             if (effectiveCommitAllowed) {
 
-                val baseFraction =
-                    computeCommitFraction(
-                        signal = mealSignal,
-                        config = config,
-                        adjuster = learningAdjuster,
-                        isNight = input.isNight
-                    )
+
                 val zoneFactor = commitFractionZoneFactor(zoneEnum)
                 val fraction =
-                         (baseFraction * zoneFactor * config.maxCommitFractionMul)
-                         .coerceIn(0.0, 1.0)
+                    (commitFraction * zoneFactor * config.maxCommitFractionMul)
+                        .coerceIn(0.0, 1.0)
 
                 status.append(
-                    "CommitFraction: base=${"%.2f".format(baseFraction)} zoneFactor=${"%.2f".format(zoneFactor)} → ${"%.2f".format(fraction)}\n"
+                    "CommitFraction: base=${"%.2f".format(commitFraction)} zoneFactor=${"%.2f".format(zoneFactor)} → ${"%.2f".format(fraction)}\n"
                 )
 
                 val commitAccessOk = (accessLevel == DoseAccessLevel.NORMAL)
@@ -2737,11 +2928,14 @@ class FCLvNext(
                 "(${config.deliveryCycleMinutes}m)\n"
         )
 
+        // minimaal 0.08U per cycle voordat we "deliver" zeggen
+        val minDeliveryU = config.minDeliverDose
+
         val shouldDeliver =
             if (persistentOverrideActive) {
-                true   // 🔒 AAPS mag NIETS beslissen
+                true
             } else {
-                execution.bolus >= 0.05 || execution.basalRate > 0.0
+                execution.deliveredTotal >= minDeliveryU
             }
 
         val rescueSignal = updateRescueDetection(
@@ -2804,25 +2998,6 @@ class FCLvNext(
 
         }
 
-        var commitBaseMin = 0.0
-        var commitMul = 1.0
-        var commitEffMin = 0.0
-
-        val commitFraction =
-            if (mealSignal.state != MealState.NONE) {
-                computeCommitFraction(
-                    signal = mealSignal,
-                    config = config,
-                    adjuster = learningAdjuster,
-                    isNight = input.isNight
-                ) { dbg ->
-                    commitBaseMin = dbg.baseMin
-                    commitMul = dbg.multiplier
-                    commitEffMin = dbg.effectiveMin
-                }
-            } else {
-                0.0
-            }
         val minutesSinceCommit =
             if (lastCommitAt != null)
                 org.joda.time.Minutes.minutesBetween(lastCommitAt, now).minutes

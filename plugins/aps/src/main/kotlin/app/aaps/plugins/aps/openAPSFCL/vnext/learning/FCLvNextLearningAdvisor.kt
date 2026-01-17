@@ -3,6 +3,11 @@ package app.aaps.plugins.aps.openAPSFCL.vnext.learning
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextLearningEpisodeManager.EpisodeOutcome
 
 class FCLvNextLearningAdvisor {
+    // ─────────────────────────────────────────────
+    // Autonomy phase control
+    // ─────────────────────────────────────────────
+    private var currentPhase: LearningPhase = LearningPhase.TIMING_ONLY
+    private var heightEnableEvidence: Int = 0
 
     // ─────────────────────────────────────────────
     // Metrics-based profile hysteresis state
@@ -15,7 +20,11 @@ class FCLvNextLearningAdvisor {
     private companion object {
         const val METRICS_COOLDOWN_MS = 6 * 60 * 60 * 1000L   // 6 uur
         const val MIN_METRICS_EVIDENCE = 3
+
+        // DEBUG: zet op true om fase NIET automatisch naar TIMING_AND_HEIGHT te laten gaan
+        const val FREEZE_PHASE_TO_TIMING_ONLY = false
     }
+
 
     private var lastMetrics: LearningMetricsSnapshot? = null
 
@@ -29,6 +38,8 @@ class FCLvNextLearningAdvisor {
     private var profileEvidenceCount: Int = 0
 
     fun getProfileAdvice(): FCLvNextProfileAdvice? = lastProfileAdvice
+
+    fun getLearningPhase(): LearningPhase = currentPhase
 
     fun onMetricsSnapshot(snapshot: LearningMetricsSnapshot) {
         lastMetrics = snapshot
@@ -98,6 +109,30 @@ class FCLvNextLearningAdvisor {
                 )
             }
         }
+
+        // ─────────────────────────────────────────────
+        // Autonomy gate: allow HEIGHT learning?
+        // ─────────────────────────────────────────────
+        if (!FREEZE_PHASE_TO_TIMING_ONLY && currentPhase == LearningPhase.TIMING_ONLY) {
+
+            val safeForHeight =
+                snapshot.dataQualityOk &&
+                    snapshot.tbr24 < 2.0 &&
+                    snapshot.tir7d >= 70.0 &&
+                    (!snapshot.isNight || snapshot.tbr24 < 1.0)
+
+            if (safeForHeight) {
+                heightEnableEvidence++
+            } else {
+                heightEnableEvidence = 0
+            }
+
+            // vereis meerdere stabiele snapshots
+            if (heightEnableEvidence >= 3) {
+                currentPhase = LearningPhase.TIMING_AND_HEIGHT
+            }
+        }
+
     }
 
     fun onEpisodeOutcome(
@@ -211,6 +246,50 @@ class FCLvNextLearningAdvisor {
     fun getAdvice(isNight: Boolean): List<LearningAdvice> =
         stats.allAdvice(isNight)
 
+    /**
+     * UI-only learning advice.
+     *
+     * - Toont TIMING-adviezen eerder (lage confidence toegestaan)
+     * - HEIGHT-adviezen alleen in TIMING_AND_HEIGHT fase
+     * - Heeft GEEN invloed op dosing (adjuster gebruikt getAdvice())
+     */
+    fun getUiAdvice(isNight: Boolean): List<LearningAdvice> {
+
+        val map =
+            if (isNight) stats.exportNightStats()
+            else stats.exportDayStats()
+
+        val out = mutableListOf<LearningAdvice>()
+
+        // ✅ toon ALLE parameters uit de specs, ook als ze nog geen stats hebben
+        for ((param, spec) in LearningParameterSpecs.specs) {
+
+            val snap = map[param] ?: LearningStatSnapshot(ema = 0.0, count = 0)
+
+            val direction =
+                when {
+                    snap.ema > 0.05 -> +1
+                    snap.ema < -0.05 -> -1
+                    else -> 0
+                }
+
+            val confidence =
+                kotlin.math.abs(snap.ema).coerceIn(0.0, 1.0)
+
+            out += LearningAdvice(
+                parameter = param,
+                direction = direction,
+                confidence = confidence,
+                evidenceCount = snap.count,
+                isNight = isNight
+            )
+        }
+
+        return out
+    }
+
+
+
     fun getLearningStatus(isNight: Boolean): String {
         val sb = StringBuilder()
 
@@ -260,8 +339,10 @@ class FCLvNextLearningAdvisor {
             dayStats = stats.exportDayStats(),
             nightStats = stats.exportNightStats(),
             profileAdvice = lastProfileAdvice,
-            profileEvidenceCount = profileEvidenceCount
+            profileEvidenceCount = profileEvidenceCount,
+            learningPhase = currentPhase
         )
+
 
     fun importSnapshot(snapshot: FCLvNextLearningSnapshot) {
         if (snapshot.schemaVersion != 1) return
@@ -271,6 +352,11 @@ class FCLvNextLearningAdvisor {
 
         lastProfileAdvice = snapshot.profileAdvice
         profileEvidenceCount = snapshot.profileEvidenceCount
+
+        currentPhase =
+            if (FREEZE_PHASE_TO_TIMING_ONLY) LearningPhase.TIMING_ONLY
+            else snapshot.learningPhase
     }
+
 
 }

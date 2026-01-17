@@ -10,6 +10,10 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextContext
  * - Geen invloed op dosing
  * - Geen logging (dat komt in Stap 2)
  */
+private const val END_SLOPE_MAX = 0.35         // was 0.2 (te streng)
+private const val END_ACCEL_MAX = 0.08         // was 0.0 (te streng)
+private const val MAX_EPISODE_MIN = 180        // harde timeout 3 uur
+
 class FCLvNextLearningEpisodeManager {
 
     // ─────────────────────────────────────────────
@@ -18,6 +22,7 @@ class FCLvNextLearningEpisodeManager {
     enum class EpisodeOutcome {
         GOOD_CONTROL,
         TOO_LATE,
+        TOO_LATE_EVEN_WITH_EARLY,
         TOO_STRONG,
         OVERSHOOT,
         HYPO_RISK,
@@ -123,11 +128,19 @@ class FCLvNextLearningEpisodeManager {
             lastCommitAt == null ||
                 minutesSince(lastCommitAt, now) > config.absorptionWindowMinutes
 
-        return !peakActive &&
-            ctx.acceleration <= 0.0 &&
-            ctx.slope <= 0.2 &&
-            absorptionDone
+        val ageMin = minutesSince(episode.startedAt, now)
+
+        // ✅ timeout: altijd eindigen
+        if (ageMin >= MAX_EPISODE_MIN) return true
+
+        // ✅ robuuster “stabilized” criterium (ruisbestendig)
+        val stabilized =
+            ctx.slope <= END_SLOPE_MAX &&
+                kotlin.math.abs(ctx.acceleration) <= END_ACCEL_MAX
+
+        return !peakActive && stabilized && absorptionDone
     }
+
 
     // ─────────────────────────────────────────────
     // Outcome classification (deterministisch)
@@ -168,6 +181,18 @@ class FCLvNextLearningEpisodeManager {
         ) {
             return EpisodeOutcome.TOO_LATE
         }
+
+        // 4️⃣ B  Nog steeds te laat (ook al was er early)
+
+        if (
+            peakBand >= 12 &&
+            episode.earlyStageMax > 0 &&
+            episode.totalDelivered < 0.60 &&     // startwaarde: te weinig vroeg
+            episode.maxSlope >= 1.2
+        ) {
+            return EpisodeOutcome.TOO_LATE_EVEN_WITH_EARLY
+        }
+
 
         // 5️⃣ Te sterk
         if (

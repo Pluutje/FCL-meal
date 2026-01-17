@@ -22,6 +22,8 @@ class FCLvNextLearningPersistence(
         runCatching {
             val snap = fromJson(raw)
             advisor.importSnapshot(snap)
+
+            saveFrom(advisor)
         }.onFailure {
             // Fail-safe: corrupte JSON? Dan niet crashen.
             // Optioneel: reset key zodat je “schone start” hebt.
@@ -48,12 +50,15 @@ class FCLvNextLearningPersistence(
 
         root.put("profileEvidenceCount", s.profileEvidenceCount)
 
+        root.put("learningPhase", s.learningPhase.name)
+
         if (s.profileAdvice != null) {
             val pa = JSONObject()
             pa.put("recommended", s.profileAdvice.recommended.name)
             pa.put("confidence", s.profileAdvice.confidence)
             pa.put("reason", s.profileAdvice.reason)
             pa.put("evidenceCount", s.profileAdvice.evidenceCount)
+            root.put("learningPhase", s.learningPhase.name)
             root.put("profileAdvice", pa)
         } else {
             root.put("profileAdvice", JSONObject.NULL)
@@ -65,6 +70,16 @@ class FCLvNextLearningPersistence(
     private fun fromJson(raw: String): FCLvNextLearningSnapshot {
         val root = JSONObject(raw)
         val ver = root.optInt("schemaVersion", 1)
+
+        val phaseRaw = root.optString("learningPhase", LearningPhase.TIMING_ONLY.name)
+
+        val learningPhase =
+            when (phaseRaw) {
+                "TIMING_AND_HIGHT" -> LearningPhase.TIMING_AND_HEIGHT // legacy typo fix
+                else -> runCatching { LearningPhase.valueOf(phaseRaw) }
+                    .getOrElse { LearningPhase.TIMING_ONLY }
+            }
+
 
         val dayStats = jsonToStats(root.optJSONObject("dayStats"))
         val nightStats = jsonToStats(root.optJSONObject("nightStats"))
@@ -90,7 +105,8 @@ class FCLvNextLearningPersistence(
             dayStats = dayStats,
             nightStats = nightStats,
             profileAdvice = profileAdvice,
-            profileEvidenceCount = profEvidence
+            profileEvidenceCount = profEvidence,
+            learningPhase = learningPhase
         )
     }
 

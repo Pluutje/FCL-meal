@@ -306,15 +306,17 @@ Bepaalt hoe snel FCL een maaltijdstijging als “echt” herkent (timing). Heeft
 </string>
 
     <string-array name="fcl_vnext_meal_detect_speed_entries">
-        <item>Slow (vet/eiwit, trage stijging)</item>
-        <item>Moderate (standaard)</item>
-        <item>Fast (snelle carbs, eerder detecteren)</item>
+        <item>Langzaam (later detecteren)</item>
+        <item>Moderate (gemiddeld detecteren)</item>
+        <item>Snel (eerder detecteren)</item>
+        <item>Extra Snel (nog eerder detecteren)</item>
     </string-array>
 
     <string-array name="fcl_vnext_meal_detect_speed_values">
         <item>SLOW</item>
         <item>MODERATE</item>
         <item>FAST</item>
+        <item>EXTRA_FAST</item>
     </string-array>
 
     <!-- ===============================

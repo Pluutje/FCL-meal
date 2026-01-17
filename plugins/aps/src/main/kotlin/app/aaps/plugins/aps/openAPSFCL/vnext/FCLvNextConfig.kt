@@ -14,6 +14,7 @@ data class FCLvNextConfig(
     val gain: Double,
     val maxSMB: Double,
     val hybridPercentage: Int,
+    val minDeliverDose: Double,
     val profielNaam: String,
     val mealDetectSpeed: String,
     val correctionStyle: String,
@@ -172,6 +173,7 @@ fun loadFCLvNextConfig(
         gain = gain,
         maxSMB = maxSMB,
         hybridPercentage = 50,
+        minDeliverDose = 0.075,
 
         profielNaam = profileName,
         mealDetectSpeed = mealDetectSpeed,
@@ -347,6 +349,21 @@ private fun applyMealDetectSpeed(
             mealConfirmConfidence =
                 (cfg.mealConfirmConfidence - 0.10).coerceIn(0.0, 1.0)
         )
+
+        "EXTRA_FAST" -> cfg.copy(
+            // nóg eerder detecteren
+            mealSlopeMin = (cfg.mealSlopeMin - 0.25).coerceAtLeast(0.15),
+            mealAccelMin = (cfg.mealAccelMin - 0.08).coerceAtLeast(0.03),
+            mealDeltaMin = (cfg.mealDeltaMin - 0.30).coerceAtLeast(0.25),
+
+            // sneller van onzeker → confirm
+            mealUncertainConfidence =
+                (cfg.mealUncertainConfidence - 0.10).coerceIn(0.0, 1.0),
+
+            mealConfirmConfidence =
+                (cfg.mealConfirmConfidence - 0.20).coerceIn(0.0, 1.0)
+        )
+
 
         else -> cfg
         // MODERATE = base

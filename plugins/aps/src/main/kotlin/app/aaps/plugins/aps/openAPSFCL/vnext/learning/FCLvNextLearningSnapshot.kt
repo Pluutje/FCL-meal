@@ -11,7 +11,8 @@ data class FCLvNextLearningSnapshot(
     val nightStats: Map<LearningParameter, LearningStatSnapshot>,
 
     val profileAdvice: FCLvNextProfileAdvice?,
-    val profileEvidenceCount: Int
+    val profileEvidenceCount: Int,
+    val learningPhase: LearningPhase
 )
 
 /**

@@ -225,7 +225,7 @@ class DetermineBasalFCL @Inject constructor(
         consoleLog.clear()
         var rT = RT(
             algorithm = APSResult.Algorithm.FCL,
-            runningDynamicIsf = dynIsfMode,
+            runningDynamicIsf = false,
             timestamp = currentTime,
             consoleLog = consoleLog,
             consoleError = consoleError
@@ -299,11 +299,7 @@ class DetermineBasalFCL @Inject constructor(
         // when temptarget is 160 mg/dL, run 50% basal (120 = 75%; 140 = 60%),  80 mg/dL with low_temptarget_lowers_sensitivity would give 1.5x basal, but is limited to autosens_max (1.2x by default)
         val halfBasalTarget = profile.half_basal_exercise_target
 
-        if (dynIsfMode) {
-            consoleError.add("---------------------------------------------------------")
-            consoleError.add(" Dynamic ISF version 2.0 ")
-            consoleError.add("---------------------------------------------------------")
-        }
+
 
         if (high_temptarget_raises_sensitivity && profile.temptargetSet && target_bg > normalTarget
             || profile.low_temptarget_lowers_sensitivity && profile.temptargetSet && target_bg < normalTarget
@@ -442,14 +438,28 @@ class DetermineBasalFCL @Inject constructor(
         //    advice.statusText.split("\n").forEach { consoleError.add(it) }
         //    consoleError.add("\n")
 
+// 1) Log elke cycle (lichtgewicht)
+            fclMetrics.onFiveMinuteTick(
+                currentBG = bgNowMmol,          // ✅ mmol/L (zeker correct)
+                currentIOB = currentIOB,        // U
+                target = targetMgdl / 18.0      // mmol/L
+            )
+
+// 2) Snapshot (throttled update inside)
             val snapshot = fclMetrics.buildLearningSnapshot(isNight)
             if (snapshot != null) {
                 fclvNext.pushLearningMetrics(snapshot)
             }
 
+            val learningAdvice =
+                fclvNext.getUiLearningAdvice(isNight)
+
             val learningStatus =
                 fclvNext.getLearningStatus(isNight)
 
+
+            val learningPhase =
+                fclvNext.getLearningPhase()
 
             val statusFormatter = FCLvNextStatusFormatter(preferences)
 
@@ -461,8 +471,10 @@ class DetermineBasalFCL @Inject constructor(
                 shouldDeliver = shouldDeliver,
                 activityLog = activity.log,
                 resistanceLog = resistanceLog,
-                metricsText = fclMetrics?.getUserStatsString(),
-                learningStatusText = learningStatus
+                metricsText = fclMetrics.getUserStatsString(isNight),
+                learningStatusText = learningStatus,
+                learningAdvice = learningAdvice,
+                learningPhase = learningPhase
             )
 
             // naar console / UI
@@ -493,13 +505,9 @@ class DetermineBasalFCL @Inject constructor(
 
         // calculate the naive (bolus calculator math) eventual BG based on net IOB and sensitivity
         val naive_eventualBG =
-            if (dynIsfMode)
-                round(bg - (iob_data.iob * sens), 0)
-            else {
-                if (iob_data.iob > 0) round(bg - (iob_data.iob * sens), 0)
-                else  // if IOB is negative, be more conservative and use the lower of sens, profile.sens
-                    round(bg - (iob_data.iob * min(sens, profile.sens)), 0)
-            }
+            if (iob_data.iob > 0) round(bg - (iob_data.iob * sens), 0)
+            else  round(bg - (iob_data.iob * min(sens, profile.sens)), 0)
+
         // and adjust it for the deviation above
         var eventualBG = naive_eventualBG + deviation
 
@@ -549,7 +557,7 @@ class DetermineBasalFCL @Inject constructor(
 
         rT = RT(
             algorithm = APSResult.Algorithm.FCL,
-            runningDynamicIsf = dynIsfMode,
+            runningDynamicIsf = false,
             timestamp = currentTime,
             bg = bg,
             tick = tick,
@@ -713,19 +721,15 @@ class DetermineBasalFCL @Inject constructor(
         iobArray.forEach { iobTick ->
             //console.error(iobTick);
             val predBGI: Double = round((-iobTick.activity * sens * 5), 2)
-            val IOBpredBGI: Double =
-                if (dynIsfMode) round((-iobTick.activity * (1800 / (profile.TDD * (ln((max(IOBpredBGs[IOBpredBGs.size - 1], 39.0) / profile.insulinDivisor) + 1)))) * 5), 2)
-                else predBGI
+            val IOBpredBGI: Double = predBGI
+
             iobTick.iobWithZeroTemp ?: error("iobTick.iobWithZeroTemp missing")
             // try to find where is crashing https://console.firebase.google.com/u/0/project/androidaps-c34f8/crashlytics/app/android:info.nightscout.androidaps/issues/950cdbaf63d545afe6d680281bb141e5?versions=3.3.0-dev-d%20(1500)&time=last-thirty-days&types=crash&sessionEventKey=673BF7DD032300013D4704707A053273_2017608123846397475
             if (iobTick.iobWithZeroTemp!!.activity.isNaN() || sens.isNaN())
                 fabricPrivacy.logCustom("iobTick.iobWithZeroTemp!!.activity=${iobTick.iobWithZeroTemp!!.activity} sens=$sens")
-            val predZTBGI =
-                if (dynIsfMode) round((-iobTick.iobWithZeroTemp!!.activity * (1800 / (profile.TDD * (ln((max(ZTpredBGs[ZTpredBGs.size - 1], 39.0) / profile.insulinDivisor) + 1)))) * 5), 2)
-                else round((-iobTick.iobWithZeroTemp!!.activity * sens * 5), 2)
-            val predUAMBGI =
-                if (dynIsfMode) round((-iobTick.activity * (1800 / (profile.TDD * (ln((max(UAMpredBGs[UAMpredBGs.size - 1], 39.0) / profile.insulinDivisor) + 1)))) * 5), 2)
-                else predBGI
+            val predZTBGI = round((-iobTick.iobWithZeroTemp!!.activity * sens * 5), 2)
+            val predUAMBGI = predBGI
+
             // for IOBpredBGs, predicted deviation impact drops linearly from current deviation down to zero
             // over 60 minutes (data points every 5m)
             val predDev: Double = ci * (1 - min(1.0, IOBpredBGs.size / (60.0 / 5.0)))
@@ -889,26 +893,7 @@ class DetermineBasalFCL @Inject constructor(
         val fSensBG = min(minPredBG, bg)
 
         var future_sens = 0.0
-        if (dynIsfMode) {
-            if (bg > target_bg && glucose_status.delta < 3 && glucose_status.delta > -3 && glucose_status.shortAvgDelta > -3 && glucose_status.shortAvgDelta < 3 && eventualBG > target_bg && eventualBG
-                < bg
-            ) {
-                future_sens = (1800 / (ln((((fSensBG * 0.5) + (bg * 0.5)) / profile.insulinDivisor) + 1) * profile.TDD))
-                future_sens = round(future_sens, 1)
-             //   consoleLog.add("Future state sensitivity is $future_sens based on eventual and current bg due to flat glucose level above target")
-                rT.reason.append("Dosing sensitivity: $future_sens using eventual BG;")
-            } else if (glucose_status.delta > 0 && eventualBG > target_bg || eventualBG > bg) {
-                future_sens = (1800 / (ln((bg / profile.insulinDivisor) + 1) * profile.TDD))
-                future_sens = round(future_sens, 1)
-            //    consoleLog.add("Future state sensitivity is $future_sens using current bg due to small delta or variation")
-                rT.reason.append("Dosing sensitivity: $future_sens using current BG;")
-            } else {
-                future_sens = (1800 / (ln((fSensBG / profile.insulinDivisor) + 1) * profile.TDD))
-                future_sens = round(future_sens, 1)
-            //    consoleLog.add("Future state sensitivity is $future_sens based on eventual bg due to -ve delta")
-                rT.reason.append("Dosing sensitivity: $future_sens using eventual BG;")
-            }
-        }
+
 
         val fractionCarbsLeft = meal_data.mealCOB / meal_data.carbs
         // if we have COB and UAM is enabled, average both
@@ -1136,9 +1121,7 @@ class DetermineBasalFCL @Inject constructor(
 
             // calculate 30m low-temp required to get projected BG up to target
             // multiply by 2 to low-temp faster for increased hypo safety
-            var insulinReq =
-                if (dynIsfMode) 2 * min(0.0, (eventualBG - target_bg) / future_sens)
-                else 2 * min(0.0, (eventualBG - target_bg) / sens)
+            var insulinReq = 2 * min(0.0, (eventualBG - target_bg) / sens)
             insulinReq = round(insulinReq, 2)
             // calculate naiveInsulinReq based on naive_eventualBG
             var naiveInsulinReq = min(0.0, (naive_eventualBG - target_bg) / sens)
@@ -1244,9 +1227,7 @@ class DetermineBasalFCL @Inject constructor(
         } else { // otherwise, calculate 30m high-temp required to get projected BG down to target
             // insulinReq is the additional insulin required to get minPredBG down to target_bg
             //console.error(minPredBG,eventualBG);
-            var insulinReq =
-                if (dynIsfMode) round((min(minPredBG, eventualBG) - target_bg) / future_sens, 2)
-                else round((min(minPredBG, eventualBG) - target_bg) / sens, 2)
+            var insulinReq = round((min(minPredBG, eventualBG) - target_bg) / sens, 2)
             // if that would put us over max_iob, then reduce accordingly
             if (insulinReq > max_iob - iob_data.iob) {
                 rT.reason.append("max_iob $max_iob, ")
