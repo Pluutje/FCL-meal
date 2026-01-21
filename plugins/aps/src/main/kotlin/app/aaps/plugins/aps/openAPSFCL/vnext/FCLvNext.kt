@@ -7,13 +7,8 @@ import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextCsvLogger
 import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextParameterLogger
 import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextProfileParameterSnapshot
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextLearningAdvisor
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextLearningEpisodeManager
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextLearningPersistence
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.LearningMetricsSnapshot
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextLearningAdjuster
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.LearningAdvice
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.LearningParameter
+import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextCsvLogRow
+import kotlin.math.roundToInt
 
 data class FCLvNextInput(
     val bgNow: Double,                          // mmol/L
@@ -773,17 +768,27 @@ private fun detectMealSignal(ctx: FCLvNextContext, config: FCLvNextConfig): Meal
         return MealSignal(MealState.NONE, 0.0, "Low consistency")
     }
 
-    val rising = ctx.slope > config.mealSlopeMin
-    val accelerating = ctx.acceleration > config.mealAccelMin
-    val aboveTarget = ctx.deltaToTarget > config.mealDeltaMin
+    val thresholdMul = config.mealDetectThresholdMul
+
+    val slopeMin = config.mealSlopeMin * thresholdMul
+    val accelMin = config.mealAccelMin * thresholdMul
+    val deltaMin = config.mealDeltaMin * thresholdMul
+
 
     // confidence: combineer factoren (simpel, maar werkt)
-    val slopeScore = ((ctx.slope - config.mealSlopeMin) / config.mealSlopeSpan).coerceIn(0.0, 1.0)
-    val accelScore = ((ctx.acceleration - config.mealAccelMin) / config.mealAccelSpan).coerceIn(0.0, 1.0)
-    val deltaScore = ((ctx.deltaToTarget - config.mealDeltaMin) / config.mealDeltaSpan).coerceIn(0.0, 1.0)
+    val rising = ctx.slope > slopeMin
+    val accelerating = ctx.acceleration > accelMin
+    val aboveTarget = ctx.deltaToTarget > deltaMin
+
+    val slopeScore = ((ctx.slope - slopeMin) / config.mealSlopeSpan).coerceIn(0.0, 1.0)
+    val accelScore = ((ctx.acceleration - accelMin) / config.mealAccelSpan).coerceIn(0.0, 1.0)
+    val deltaScore = ((ctx.deltaToTarget - deltaMin) / config.mealDeltaSpan).coerceIn(0.0, 1.0)
+
+
 
     val confidence =
         (0.45 * slopeScore + 0.35 * accelScore + 0.20 * deltaScore)
+            .let { it * config.mealConfidenceSpeedMul }
             .coerceIn(0.0, 1.0)
 
     // state
@@ -955,8 +960,6 @@ private fun preMealRiseFloorU(
         .coerceAtMost(0.50)
 }
 
-
-
 private data class CommitLearningDebug(
     val baseMin: Double,
     val multiplier: Double,
@@ -965,93 +968,33 @@ private data class CommitLearningDebug(
 
 private fun computeCommitFraction(
     signal: MealSignal,
-    config: FCLvNextConfig,
-    adjuster: FCLvNextLearningAdjuster,
-    isNight: Boolean,
-    debugOut: ((CommitLearningDebug) -> Unit)? = null
-): Double {
+    config: FCLvNextConfig
+): Double = when (signal.state) {
 
-    return when (signal.state) {
+    MealState.NONE -> 0.0
 
-        MealState.NONE -> {
-            0.0
-        }
-
-        MealState.UNCERTAIN -> {
-
-            val baseMinCfg = config.uncertainMinFraction
-            val baseMaxCfg = config.uncertainMaxFraction
-
-            val minMul =
-                adjuster.multiplier(
-                    LearningParameter.UNCERTAIN_MIN_FRACTION,
-                    isNight
-                )
-
-            val maxMul =
-                adjuster.multiplier(
-                    LearningParameter.UNCERTAIN_MAX_FRACTION,
-                    isNight
-                )
-
-            val minEff = baseMinCfg * minMul
-            val maxEff = baseMaxCfg * maxMul
-
-            val t =
-                ((signal.confidence - config.mealUncertainConfidence) /
-                    (config.mealConfirmConfidence - config.mealUncertainConfidence))
-                    .coerceIn(0.0, 1.0)
-
-            debugOut?.invoke(
-                CommitLearningDebug(
-                    baseMin = baseMinCfg,
-                    multiplier = minMul,
-                    effectiveMin = minEff
-                )
-            )
-
-            (minEff + t * (maxEff - minEff))
+    MealState.UNCERTAIN -> {
+        val t =
+            ((signal.confidence - config.mealUncertainConfidence) /
+                (config.mealConfirmConfidence - config.mealUncertainConfidence))
                 .coerceIn(0.0, 1.0)
-        }
 
-        MealState.CONFIRMED -> {
+        config.uncertainMinFraction +
+            t * (config.uncertainMaxFraction - config.uncertainMinFraction)
+    }
 
-            val baseMinCfg = config.confirmMinFraction
-            val baseMaxCfg = config.confirmMaxFraction
-
-            val minMul =
-                adjuster.multiplier(
-                    LearningParameter.CONFIRM_MIN_FRACTION,
-                    isNight
-                )
-
-            val maxMul =
-                adjuster.multiplier(
-                    LearningParameter.CONFIRM_MAX_FRACTION,
-                    isNight
-                )
-
-            val minEff = baseMinCfg * minMul
-            val maxEff = baseMaxCfg * maxMul
-
-            val t =
-                ((signal.confidence - config.mealConfirmConfidence) /
-                    (1.0 - config.mealConfirmConfidence))
-                    .coerceIn(0.0, 1.0)
-
-            debugOut?.invoke(
-                CommitLearningDebug(
-                    baseMin = baseMinCfg,
-                    multiplier = minMul,
-                    effectiveMin = minEff
-                )
-            )
-
-            (minEff + t * (maxEff - minEff))
+    MealState.CONFIRMED -> {
+        val t =
+            ((signal.confidence - config.mealConfirmConfidence) /
+                (1.0 - config.mealConfirmConfidence))
                 .coerceIn(0.0, 1.0)
-        }
+
+        config.confirmMinFraction +
+            t * (config.confirmMaxFraction - config.confirmMinFraction)
     }
 }
+
+
 
 
 
@@ -1232,8 +1175,8 @@ private data class MicroRampResult(
     val reason: String
 )
 
-private fun computeMicroRamp(ctx: FCLvNextContext): MicroRampResult {
-
+private fun computeMicroRamp(ctx: FCLvNextContext, config: FCLvNextConfig): MicroRampResult {
+    val mul = config.microRampThresholdMul
     // algemene safety: meteen stoppen als fast lane draait
     val hardAbort =
         ctx.recentDelta5m <= MEAL_ABORT_DELTA5M ||
@@ -1255,18 +1198,17 @@ private fun computeMicroRamp(ctx: FCLvNextContext): MicroRampResult {
 
     // Tier detectie
     val fast =
-        ctx.recentDelta5m >= FAST_RISE_DELTA5M ||
-            (ctx.recentSlope >= FAST_RISE_SLOPE_HR && ctx.acceleration >= FAST_RISE_ACCEL)
+        ctx.recentDelta5m >= FAST_RISE_DELTA5M * mul ||
+            (ctx.recentSlope >= FAST_RISE_SLOPE_HR * mul && ctx.acceleration >= FAST_RISE_ACCEL * mul)
 
     val meal =
         // alleen zinvol als we echt boven target zitten
-        ctx.deltaToTarget >= 0.8 && (
+        ctx.deltaToTarget >= 0.8 * mul && (
             // eerder triggeren op fast-lane rise
-            ctx.recentDelta5m >= 0.06 ||
-                ctx.recentSlope >= 0.60 ||
-                (ctx.recentSlope >= MEAL_RISE_SLOPE_HR && ctx.acceleration >= MEAL_RISE_ACCEL) ||
-                (ctx.recentDelta5m >= MEAL_RISE_DELTA5M)
-            )
+            ctx.recentDelta5m >= 0.06 * mul ||
+            ctx.recentSlope >= 0.60 * mul ||
+            ( ctx.recentSlope >= MEAL_RISE_SLOPE_HR * mul &&  ctx.acceleration >= MEAL_RISE_ACCEL * mul  ) ||
+             ctx.recentDelta5m >= MEAL_RISE_DELTA5M * mul  )
 
 
     if (!fast && !meal) {
@@ -1308,7 +1250,8 @@ private fun computeMicroRamp(ctx: FCLvNextContext): MicroRampResult {
 
 
     val tt = smooth01((ctx.recentDelta5m - t0) / (t1 - t0))
-    val micro = (minU + (maxU - minU) * tt).coerceIn(minU, maxU)
+    val micro = ((minU + (maxU - minU) * tt) * config.microDoseMul).coerceIn(minU * 0.5, maxU * 1.5)
+
 
     return MicroRampResult(
         active = true,
@@ -1412,9 +1355,7 @@ private fun computeEarlyDoseDecision(
         if (ctx.acceleration >= 0.35 && ctx.iobRatio <= 0.25) 0.75 else 1.0
 
 // profiel beïnvloedt alleen timing (threshold)
-    var dynamicStage1Min =
-        (baseStage1Min * fastCarbStage1Mul * config.earlyStage1ThresholdMul)
-            .coerceIn(0.12, 0.45)
+    var dynamicStage1Min = (baseStage1Min * fastCarbStage1Mul * config.earlyStage1ThresholdMul).coerceIn(0.12, 0.45)
 
     // 🔹 EXTREME-zone: stage-1 iets eerder toestaan
     if (
@@ -1424,8 +1365,7 @@ private fun computeEarlyDoseDecision(
         ctx.consistency >= 0.45 &&
         ctx.deltaToTarget >= 2.5
     ) {
-        dynamicStage1Min =
-            (dynamicStage1Min - 0.05).coerceAtLeast(0.20)
+        dynamicStage1Min = (dynamicStage1Min / config.mealConfidenceSpeedMul).coerceIn(0.10, 0.50)
     }
 
 
@@ -1462,8 +1402,9 @@ private fun computeEarlyDoseDecision(
 
   //  if (ctx.input.isNight && ctx.iobRatio >= 0.55) factor *= 0.88
 
-    val targetU =
-        (config.maxSMB * factor).coerceIn(0.0, config.maxSMB)
+
+    val targetU = (config.maxSMB * factor * config.doseStrengthMul).coerceIn(0.0, config.maxSMB)
+
 
     return EarlyDoseDecision(
         active = true,
@@ -1863,37 +1804,7 @@ class FCLvNext(
             FCLvNextProfileParameterSnapshot.collect(preferences)
         }
 
-    private val learningEpisodes = FCLvNextLearningEpisodeManager()
 
-    private val learningAdvisor = FCLvNextLearningAdvisor()
-
-    fun getLearningStatus(isNight: Boolean): String {
-        return learningAdvisor.getLearningStatus(isNight)
-    }
-
-    fun getLearningAdvice(isNight: Boolean): List<LearningAdvice> {
-        return learningAdvisor.getAdvice(isNight)
-    }
-
-    fun getLearningPhase(): String {
-        return learningAdvisor.getLearningPhase().name
-    }
-
-    fun getUiLearningAdvice(isNight: Boolean): List<LearningAdvice> =
-        learningAdvisor.getUiAdvice(isNight)
-
-
-
-    fun pushLearningMetrics(snapshot: LearningMetricsSnapshot) {
-        learningAdvisor.onMetricsSnapshot(snapshot)
-    }
-
-
-    private val learningPersistence = FCLvNextLearningPersistence(preferences)
-
-    init {
-        learningPersistence.loadInto(learningAdvisor)
-    }
 
 
     private fun buildContext(input: FCLvNextInput, config: FCLvNextConfig): FCLvNextContext {
@@ -1962,36 +1873,21 @@ class FCLvNext(
          // reset reserve logging per cycle
         reserveActionThisCycle = "NONE"
         reserveDeltaThisCycle = 0.0
+
+        val logRow = FCLvNextCsvLogRow(
+            ts = DateTime.now(),
+            isNight = input.isNight,
+            bg = input.bgNow,
+            target = input.targetBG
+        )
+
+        
         // ─────────────────────────────────────────────
         // 1️⃣ Config & context (trends, IOB, delta)
         // ─────────────────────────────────────────────
         val config = loadFCLvNextConfig(preferences, input.isNight)
-        val learningAdjuster =
-            FCLvNextLearningAdjuster(
-                advisor = learningAdvisor,
-                phase = learningAdvisor.getLearningPhase()
-            )
 
-        val kDeltaEff =
-            config.kDelta *
-                learningAdjuster.multiplier(
-                    LearningParameter.K_DELTA,
-                    input.isNight
-                )
 
-        val kSlopeEff =
-            config.kSlope *
-                learningAdjuster.multiplier(
-                    LearningParameter.K_SLOPE,
-                    input.isNight
-                )
-
-        val kAccelEff =
-            config.kAccel *
-                learningAdjuster.multiplier(
-                    LearningParameter.K_ACCEL,
-                    input.isNight
-                )
 
 
         val ctx = buildContext(input, config)
@@ -1999,6 +1895,22 @@ class FCLvNext(
 
         val zoneEnum = computeBgZone(ctx)
         val bgZone = zoneEnum.name
+
+        logRow.heightIntent = "NONE"
+        logRow.profielNaam = config.profielNaam
+        logRow.mealDetectSpeed = config.mealDetectSpeed
+        logRow.correctionStyle = config.correctionStyle
+        logRow.doseDistributionStyle = config.doseDistributionStyle
+
+        logRow.bgZone = bgZone
+        logRow.iob = input.currentIOB
+        logRow.iobRatio = ctx.iobRatio
+
+        logRow.slope = ctx.slope
+        logRow.accel = ctx.acceleration
+        logRow.recentSlope = ctx.recentSlope
+        logRow.recentDelta5m = ctx.recentDelta5m
+        logRow.consistency = ctx.consistency
 
 
         val status = StringBuilder()
@@ -2020,9 +1932,9 @@ class FCLvNext(
 
         var energy = calculateEnergy(
             ctx = ctx,
-            kDelta = kDeltaEff,
-            kSlope = kSlopeEff,
-            kAccel = kAccelEff,
+            kDelta = config.kDelta,
+            kSlope = config.kSlope,
+            kAccel = config.kAccel,
             config = config
         )
 
@@ -2112,6 +2024,8 @@ class FCLvNext(
         // ook als short-term ruis het maskeert
         // ─────────────────────────────────────────────
 
+
+
         val hardNoDelivery =
             downGate.pauseThisCycle ||
                 (
@@ -2133,6 +2047,19 @@ class FCLvNext(
 
             status.append("$reason → handoff to AAPS\n")
 
+            // ⬇️ LOGROW VULLEN
+            logRow.decisionReason = reason
+            logRow.finalDose = 0.0
+            logRow.commandedDose = 0.0
+            logRow.deliveredTotal = 0.0
+            logRow.bolus = 0.0
+            logRow.basalRate = 0.0
+            logRow.shouldDeliver = false
+
+            // ⬇️ LOGGEN
+            FCLvNextCsvLogger.log(logRow)
+
+            // ⬇️ ÉÉN return
             return FCLvNextAdvice(
                 bolusAmount = 0.0,
                 basalRate = 0.0,
@@ -2142,6 +2069,7 @@ class FCLvNext(
                 statusText = status.toString()
             )
         }
+
 
 
 // downGate.locked: NIET returnen, maar later dose=0 afdwingen (zie last line)
@@ -2296,7 +2224,7 @@ class FCLvNext(
 // ─────────────────────────────────────────────
 // 🍽️ MICRO RAMP (earlier IOB, no commit)
 // ─────────────────────────────────────────────
-        val microRamp = computeMicroRamp(ctx)
+        val microRamp = computeMicroRamp(ctx, config)
         status.append(microRamp.reason + "\n")
 
         if (
@@ -2397,6 +2325,13 @@ class FCLvNext(
         // ─────────────────────────────────────────────
        // 🟦 PERSISTENT CORRECTION LOOP (dag + nacht)
        // ─────────────────────────────────────────────
+        val baseMinDelta =
+            if (ctx.input.isNight) 1.7 else 1.5
+
+        val baseConfirmCycles = 2
+        val pMul = config.persistentAggressionMul
+        val effectiveMinDelta = (baseMinDelta / pMul).coerceIn(0.8, baseMinDelta)
+        val effectiveConfirmCycles = (baseConfirmCycles / pMul).roundToInt().coerceAtLeast(1)
 
         val persistResult = persistCtrl.tickAndMaybeFire(
             tsMillis = now.millis,
@@ -2408,17 +2343,19 @@ class FCLvNext(
             consistency = ctx.consistency,
             iob = ctx.input.currentIOB,
             iobRatio = ctx.iobRatio,
+
             maxBolusU = config.maxSMB,
 
-            minDeltaToTarget = if (ctx.input.isNight) 1.7 else 1.5,
+            minDeltaToTarget = effectiveMinDelta,
             stableSlopeAbs = 0.25,
             stableAccelAbs = 0.06,
             minConsistency = 0.45,
-            confirmCycles = 2,
+            confirmCycles = effectiveConfirmCycles,
 
             minDoseU = 0.05,
             iobRatioHardStop = 0.45
         )
+
 
 
         if (persistResult.active) {
@@ -2503,22 +2440,13 @@ class FCLvNext(
 // ─────────────────────────────────────────────
 // 🧠 LEARNING: commit fraction (single source)
 // ─────────────────────────────────────────────
-        var commitBaseMin = 0.0
-        var commitMul = 1.0
-        var commitEffMin = 0.0
 
         val commitFraction =
             if (mealSignal.state != MealState.NONE) {
                 computeCommitFraction(
                     signal = mealSignal,
-                    config = config,
-                    adjuster = learningAdjuster,
-                    isNight = input.isNight
-                ) { dbg ->
-                    commitBaseMin = dbg.baseMin
-                    commitMul = dbg.multiplier
-                    commitEffMin = dbg.effectiveMin
-                }
+                    config = config
+                )
             } else {
                 0.0
             }
@@ -2914,35 +2842,51 @@ class FCLvNext(
             smallDoseThreshold = config.smallDoseThresholdU
         )
         val deliveredNow = execution.deliveredTotal
-        if (deliveredNow > 0.0) {
-            deliveryHistory.addFirst(DateTime.now() to deliveredNow)
+        val minDeliveryU = config.minDeliverDose
+
+        // ✅ NEW: als het onder de zichtbare/werkelijke delivery drempel is, behandel als 0
+        val effectiveDeliveredNow =
+            if (deliveredNow >= minDeliveryU) deliveredNow else 0.0
+
+        val effectiveBolus =
+            if (deliveredNow >= minDeliveryU) execution.bolus else 0.0
+
+        val effectiveBasalRate =
+            if (deliveredNow >= minDeliveryU) execution.basalRate else 0.0
+
+       // ✅ Alleen echte, zichtbare afleveringen loggen
+        if (effectiveDeliveredNow >= minDeliveryU) {
+            deliveryHistory.addFirst(DateTime.now() to effectiveDeliveredNow)
             while (deliveryHistory.size > MAX_DELIVERY_HISTORY) {
                 deliveryHistory.removeLast()
             }
         }
 
+
+
+
         status.append(
             "DELIVERY: dose=${"%.2f".format(commandedDose)}U " +
-                "basal=${"%.2f".format(execution.basalRate)}U/h " +
-                "bolus=${"%.2f".format(execution.bolus)}U " +
+                "basal=${"%.2f".format(effectiveBasalRate)}U/h " +
+                "bolus=${"%.2f".format(effectiveBolus)}U " +
                 "(${config.deliveryCycleMinutes}m)\n"
         )
 
         // minimaal 0.08U per cycle voordat we "deliver" zeggen
-        val minDeliveryU = config.minDeliverDose
+    //    val minDeliveryU = config.minDeliverDose
 
         val shouldDeliver =
             if (persistentOverrideActive) {
-                true
+                persistResult.fired && effectiveDeliveredNow >= minDeliveryU
             } else {
-                execution.deliveredTotal >= minDeliveryU
+                effectiveDeliveredNow >= minDeliveryU
             }
 
         val rescueSignal = updateRescueDetection(
             ctx = ctx,
             now = now,
             config = config,
-            deliveredThisCycle = deliveredNow,
+            deliveredThisCycle = effectiveDeliveredNow,
             pred60 = pred60
         )
 
@@ -2952,145 +2896,13 @@ class FCLvNext(
             status.append("RESCUE: ${rescueSignal.reason}\n")
         }
 
-// episode start (primitives)
-        learningEpisodes.maybeStartEpisode(
-            ctx = ctx,
-            peakActive = peakEstimator.active,
-            earlyStage = earlyDose.stage,
-            mealActive = (mealSignal.state != MealState.NONE),
-            now = now
-        )
 
-// episode update (primitives)
-        learningEpisodes.updateEpisode(
-            ctx = ctx,
-            earlyStage = earlyDose.stage,
-            deliveredNow = deliveredNow,
-            rescueConfirmed = rescueSignal.confirmed
-        )
-
-        if (
-            learningEpisodes.shouldEndEpisode(
-                ctx = ctx,
-                peakActive = peakEstimator.active,
-                lastCommitAt = lastCommitAt,
-                now = now,
-                config = config
-            )
-        ) {
-            val outcome = learningEpisodes.closeEpisode(
-                ctx = ctx,
-                predictedPeak = peak.predictedPeak,
-                peakBand = peak.peakBand,
-                config = config
-            )
-
-            // Fase 2: advisor voedden
-            learningAdvisor.onEpisodeOutcome(
-                outcome = outcome,
-                isNight = input.isNight,
-                peakBand = peak.peakBand,
-                rescueConfirmed = rescueSignal.confirmed,
-                mealActive = (mealSignal.state != MealState.NONE)
-            )
-            // ✅ persist learning na episode close
-            learningPersistence.saveFrom(learningAdvisor)
-
-        }
 
         val minutesSinceCommit =
             if (lastCommitAt != null)
                 org.joda.time.Minutes.minutesBetween(lastCommitAt, now).minutes
             else
                 -1
-
-        // ─────────────────────────────────────────────
-        // CSV logging (analyse / tuning)
-        // ─────────────────────────────────────────────
-        FCLvNextCsvLogger.log(
-            isNight = input.isNight,
-            bg = input.bgNow,
-            target = input.targetBG,
-
-            slope = ctx.slope,
-            accel = ctx.acceleration,
-            consistency = ctx.consistency,
-            recentSlope = ctx.recentSlope,
-            recentDelta5m = ctx.recentDelta5m,
-
-            iob = input.currentIOB,
-            iobRatio = ctx.iobRatio,
-            bgZone = bgZone,
-            doseAccess = accessLevel.name,
-
-            effectiveISF = input.effectiveISF,
-            gain = config.gain,
-            energyBase = energy,
-            energyTotal = energyTotal,
-
-            kDeltaBase = config.kDelta,
-            kSlopeBase = config.kSlope,
-            kAccelBase = config.kAccel,
-            kDeltaEff = kDeltaEff,
-            kSlopeEff = kSlopeEff,
-            kAccelEff = kAccelEff,
-
-            stagnationActive = stagnationBoost > 0.0,
-            stagnationBoost = stagnationBoost,
-            stagnationAccel = ctx.acceleration,
-            stagnationAccelLimit = config.stagnationAccelMaxAbs,
-
-            rawDose = rawDose,
-            iobFactor = iobFactor,
-            normalDose = finalDose, // of "normalDose" variabele als je die apart hebt
-
-            earlyStage = earlyDose.stage,
-            earlyConfidence = earlyDose.lastConfidence,
-            earlyTargetU = early.targetU,
-
-            mealState = mealSignal.state.name,
-            commitFraction = commitFraction,
-            commitBaseMin = commitBaseMin,
-            commitMultiplier = commitMul,
-            commitEffectiveMin = commitEffMin,
-            minutesSinceCommit = minutesSinceCommit,
-
-            peakState = peakState.name,
-            predictedPeak = predictedPeak,
-            peakIobBoost = peakIobBoost,
-            effectiveIobRatio = boostedIobRatio,
-            peakBand = peak.peakBand,
-            peakMaxSlope = peak.maxSlope,
-            peakMomentum = peak.momentum,
-            peakRiseSinceStart = peak.riseSinceStart,
-            peakEpisodeActive = peakEstimator.active,
-
-            suppressForPeak = suppressForPeak,
-            absorptionActive = isInAbsorptionWindow(now, config),
-            reentrySignal = reentry,
-            decisionReason = decision.reason,
-
-            pred60 = rescueSignal.pred60,
-            rescueState = rescueSignal.state.name,
-            rescueConfidence = rescueSignal.confidence,
-            rescueReason = rescueSignal.reason,
-
-            finalDose = finalDose,
-            commandedDose = commandedDose,
-            deliveredTotal = execution.deliveredTotal,
-            bolus = execution.bolus,
-            basalRate = execution.basalRate,
-            reserveU = reservedInsulinU,
-            reserveAction = reserveActionThisCycle,
-            reserveDeltaU = reserveDeltaThisCycle,
-            reserveAgeMin =
-                if (reserveAddedAt != null)
-                    org.joda.time.Minutes.minutesBetween(reserveAddedAt, now).minutes
-                else
-                    -1,
-            shouldDeliver = shouldDeliver
-        )
-
 
 
         // ─────────────────────────────────────────────
@@ -3099,41 +2911,82 @@ class FCLvNext(
 
         profileParamLogger.maybeLog()
 
-        val learningAdvice = learningAdvisor.getAdvice(input.isNight)
-        if (learningAdvice.isNotEmpty()) {
-            status.append("LEARNING ADVICE:\n")
-            learningAdvice
-                .sortedByDescending { it.confidence }
-                .take(4)
-                .forEach { a ->
-                    val dir = if (a.direction > 0) "↑" else "↓"
-                    status.append(
-                        " - ${a.parameter} $dir conf=${"%.2f".format(a.confidence)} n=${a.evidenceCount}\n"
-                    )
-                }
-        }
 
         // ─────────────────────────────────────────────
-       // PROFILE ADVICE (fase 2 – adviserend)
-       // ─────────────────────────────────────────────
-        val profileAdvice = learningAdvisor.getProfileAdvice()
-        if (profileAdvice != null) {
-            status.append(
-                "PROFILE ADVICE: ${profileAdvice.recommended} " +
-                    "conf=${"%.2f".format(profileAdvice.confidence)} " +
-                    "n=${profileAdvice.evidenceCount}\n"
-            )
-            status.append("PROFILE REASON: ${profileAdvice.reason}\n")
-        }
+        // CSV logging (analyse / tuning)
+        // ─────────────────────────────────────────────
 
+        logRow.effectiveISF = input.effectiveISF
+        logRow.gain = config.gain
+        logRow.energyBase = energy
+        logRow.energyTotal = energyTotal
+
+
+
+        logRow.stagnationActive = stagnationBoost > 0.0
+        logRow.stagnationBoost = stagnationBoost
+        logRow.stagnationAccel = ctx.acceleration
+        logRow.stagnationAccelLimit = config.stagnationAccelMaxAbs
+
+        logRow.rawDose = rawDose
+        logRow.iobFactor = iobFactor
+        logRow.normalDose = finalDose
+
+        logRow.earlyStage = earlyDose.stage
+        logRow.earlyConfidence = earlyDose.lastConfidence
+        logRow.earlyTargetU = early.targetU
+
+        logRow.mealState = mealSignal.state.name
+        logRow.commitFraction = commitFraction
+
+        logRow.minutesSinceCommit = minutesSinceCommit
+
+        logRow.peakState = peakState.name
+        logRow.predictedPeak = predictedPeak
+        logRow.peakIobBoost = peakIobBoost
+        logRow.effectiveIobRatio = boostedIobRatio
+        logRow.peakBand = peak.peakBand
+        logRow.peakMaxSlope = peak.maxSlope
+        logRow.peakMomentum = peak.momentum
+        logRow.peakRiseSinceStart = peak.riseSinceStart
+        logRow.peakEpisodeActive = peakEstimator.active
+
+        logRow.suppressForPeak = suppressForPeak
+        logRow.absorptionActive = isInAbsorptionWindow(now, config)
+        logRow.reentrySignal = reentry
+        logRow.decisionReason = decision.reason
+
+
+        logRow.pred60 = rescueSignal.pred60
+        logRow.rescueState = rescueSignal.state.name
+        logRow.rescueConfidence = rescueSignal.confidence
+        logRow.rescueReason = rescueSignal.reason
+
+        logRow.finalDose = finalDose
+        logRow.commandedDose = commandedDose
+        logRow.deliveredTotal = effectiveDeliveredNow
+        logRow.bolus = effectiveBolus
+        logRow.basalRate = effectiveBasalRate
+
+        logRow.reserveU = reservedInsulinU
+        logRow.reserveAction = reserveActionThisCycle
+        logRow.reserveDeltaU = reserveDeltaThisCycle
+        logRow.reserveAgeMin =
+            if (reserveAddedAt != null)
+                org.joda.time.Minutes.minutesBetween(reserveAddedAt, now).minutes
+            else -1
+
+        logRow.shouldDeliver = shouldDeliver
+
+        FCLvNextCsvLogger.log(logRow)
 
 
         // ─────────────────────────────────────────────
         // RETURN
         // ─────────────────────────────────────────────
         return FCLvNextAdvice(
-            bolusAmount = execution.bolus,
-            basalRate = execution.basalRate,
+            bolusAmount = effectiveBolus,
+            basalRate = effectiveBasalRate,
             shouldDeliver = shouldDeliver,
             effectiveISF = input.effectiveISF,
             targetAdjustment = 0.0,

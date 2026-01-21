@@ -357,8 +357,8 @@ class DetermineBasalFCL @Inject constructor(
             )
 
 // 2) Snapshot (throttled update inside)
-            val snapshot = fclMetrics.buildLearningSnapshot(isNight)
-            if (snapshot != null) {
+        //    val snapshot = fclMetrics.buildLearningSnapshot(isNight)
+        /*    if (snapshot != null) {
                 fclvNext.pushLearningMetrics(snapshot)
             }
 
@@ -370,7 +370,7 @@ class DetermineBasalFCL @Inject constructor(
 
 
             val learningPhase =
-                fclvNext.getLearningPhase()
+                fclvNext.getLearningPhase()   */
 
             val statusFormatter = FCLvNextStatusFormatter(preferences)
 
@@ -382,10 +382,8 @@ class DetermineBasalFCL @Inject constructor(
                 shouldDeliver = shouldDeliver,
                 activityLog = activity.log,
                 resistanceLog = resistanceLog,
-                metricsText = fclMetrics.getUserStatsString(isNight),
-                learningStatusText = learningStatus,
-                learningAdvice = learningAdvice,
-                learningPhase = learningPhase
+                metricsText = fclMetrics.getUserStatsString(isNight)
+
             )
 
             // naar console / UI

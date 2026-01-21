@@ -42,6 +42,7 @@ data class FCLvNextConfig(
 
     val doseStrengthMul: Double,        // globale vermenigvuldiger op finalDose
     val maxCommitFractionMul: Double,   // schaal op commitFraction
+    val microDoseMul: Double,
 
     // =================================================
     // ✅ DOSE DISTRIBUTION (4e as)
@@ -82,6 +83,11 @@ data class FCLvNextConfig(
     val mealDeltaSpan: Double,
     val mealUncertainConfidence: Double,
     val mealConfirmConfidence: Double,
+    val mealConfidenceSpeedMul: Double,
+
+    // meal detect / timing scaling (uniform)
+    val mealDetectThresholdMul: Double,   // beïnvloedt detectMealSignal
+    val microRampThresholdMul: Double,     // beïnvloedt microRamp
 
     // commit logic
     val commitCooldownMinutes: Int,
@@ -113,6 +119,7 @@ data class FCLvNextConfig(
     val stagnationSlopeMaxPos: Double,
     val stagnationAccelMaxAbs: Double,
     val stagnationEnergyBoost: Double,
+    val persistentAggressionMul: Double,
 
     // early-dose & fast-carb behavior (algorithmic tuning)
     val earlyPeakEscalationBonus: Double,
@@ -189,6 +196,7 @@ fun loadFCLvNextConfig(
         // =================================================
         doseStrengthMul = 1.00,
         maxCommitFractionMul = 1.00,
+        microDoseMul = 1.00,
 
         // ✅ Distribution base (BALANCED)
         // (PULSED/SMOOTH schalen dit)
@@ -198,7 +206,7 @@ fun loadFCLvNextConfig(
 
         kDelta = 1.00,
         kSlope = 0.45,
-        kAccel = 0.55,
+        kAccel = 0.53,
 
         uncertainMinFraction = 0.45,
         uncertainMaxFraction = 0.70,
@@ -238,13 +246,17 @@ fun loadFCLvNextConfig(
         mealDeltaSpan = 1.0,
         mealUncertainConfidence = 0.35,
         mealConfirmConfidence = 0.70,
+        mealConfidenceSpeedMul = 1.0,
+
+         mealDetectThresholdMul = 1.0,   // beïnvloedt detectMealSignal
+         microRampThresholdMul = 1.0,
 
         // micro-hold
-        correctionHoldSlopeMax = -0.20,
-        correctionHoldAccelMax = 0.05,
-        correctionHoldDeltaMax = 1.5,
-        smallCorrectionMaxU = 0.15,
-        smallCorrectionCooldownMinutes = 15,
+        correctionHoldSlopeMax = -0.25,
+        correctionHoldAccelMax = 0.04,
+        correctionHoldDeltaMax = 1.7,
+        smallCorrectionMaxU = 0.2,
+        smallCorrectionCooldownMinutes = 12,
 
         // absorption / peak
         absorptionWindowMinutes = 60,
@@ -265,6 +277,7 @@ fun loadFCLvNextConfig(
         stagnationSlopeMaxPos = 0.25,
         stagnationAccelMaxAbs = 0.06,
         stagnationEnergyBoost = 0.12,
+        persistentAggressionMul = 1.0,
 
         earlyPeakEscalationBonus = 0.10,
         earlyStage1ThresholdMul = 1.00,
@@ -304,20 +317,34 @@ private fun applyProfileDoseStrength(
 
     return when (cfg.profielNaam) {
 
+        "VERY_STRICT" -> cfg.copy(
+            doseStrengthMul = 0.75,
+            maxCommitFractionMul = 0.65,
+            microDoseMul = 0.70
+        )
+
         "STRICT" -> cfg.copy(
-            doseStrengthMul = cfg.doseStrengthMul * 0.85,
-            maxCommitFractionMul = cfg.maxCommitFractionMul * 0.80
+            doseStrengthMul = 0.85,
+            maxCommitFractionMul = 0.80,
+            microDoseMul = 0.85
         )
 
         "AGGRESSIVE" -> cfg.copy(
-            doseStrengthMul = cfg.doseStrengthMul * 1.15,
-            maxCommitFractionMul = cfg.maxCommitFractionMul * 1.20
+            doseStrengthMul = 1.15,
+            maxCommitFractionMul = 1.20,
+            microDoseMul = 1.15
         )
 
-        else -> cfg
-        // BALANCED = base
+        "VERY_AGGRESSIVE" -> cfg.copy(
+            doseStrengthMul = 1.30,
+            maxCommitFractionMul = 1.40,
+            microDoseMul = 1.30
+        )
+
+        else -> cfg // BALANCED
     }
 }
+
 
 
 private fun applyMealDetectSpeed(
@@ -326,49 +353,54 @@ private fun applyMealDetectSpeed(
 
     return when (cfg.mealDetectSpeed) {
 
+        "VERY_SLOW" -> cfg.copy(
+            mealSlopeMin = cfg.mealSlopeMin + 0.25,
+            mealAccelMin = cfg.mealAccelMin + 0.06,
+            mealDeltaMin = cfg.mealDeltaMin + 0.35,
+            mealUncertainConfidence = (cfg.mealUncertainConfidence + 0.15).coerceIn(0.0, 1.0),
+            mealConfirmConfidence = (cfg.mealConfirmConfidence + 0.10).coerceIn(0.0, 1.0),
+            mealDetectThresholdMul = 1.20,
+            microRampThresholdMul = 1.15,
+            mealConfidenceSpeedMul = 0.85
+        )
+
         "SLOW" -> cfg.copy(
             mealSlopeMin = cfg.mealSlopeMin + 0.15,
             mealAccelMin = cfg.mealAccelMin + 0.03,
             mealDeltaMin = cfg.mealDeltaMin + 0.20,
-
-            mealUncertainConfidence =
-                (cfg.mealUncertainConfidence + 0.10).coerceIn(0.0, 1.0),
-
-            mealConfirmConfidence =
-                (cfg.mealConfirmConfidence + 0.05).coerceIn(0.0, 1.0)
+            mealUncertainConfidence = (cfg.mealUncertainConfidence + 0.10).coerceIn(0.0, 1.0),
+            mealConfirmConfidence = (cfg.mealConfirmConfidence + 0.05).coerceIn(0.0, 1.0),
+            mealDetectThresholdMul = 1.10,
+            microRampThresholdMul = 1.08,
+            mealConfidenceSpeedMul = 0.92
         )
 
         "FAST" -> cfg.copy(
             mealSlopeMin = (cfg.mealSlopeMin - 0.15).coerceAtLeast(0.2),
             mealAccelMin = (cfg.mealAccelMin - 0.05).coerceAtLeast(0.05),
             mealDeltaMin = (cfg.mealDeltaMin - 0.20).coerceAtLeast(0.3),
-
-            mealUncertainConfidence =
-                (cfg.mealUncertainConfidence - 0.05).coerceIn(0.0, 1.0),
-
-            mealConfirmConfidence =
-                (cfg.mealConfirmConfidence - 0.10).coerceIn(0.0, 1.0)
+            mealUncertainConfidence = (cfg.mealUncertainConfidence - 0.05).coerceIn(0.0, 1.0),
+            mealConfirmConfidence = (cfg.mealConfirmConfidence - 0.10).coerceIn(0.0, 1.0),
+            mealDetectThresholdMul = 0.90,
+            microRampThresholdMul = 0.92,
+            mealConfidenceSpeedMul = 1.10
         )
 
-        "EXTRA_FAST" -> cfg.copy(
-            // nóg eerder detecteren
-            mealSlopeMin = (cfg.mealSlopeMin - 0.25).coerceAtLeast(0.15),
-            mealAccelMin = (cfg.mealAccelMin - 0.08).coerceAtLeast(0.03),
-            mealDeltaMin = (cfg.mealDeltaMin - 0.30).coerceAtLeast(0.25),
-
-            // sneller van onzeker → confirm
-            mealUncertainConfidence =
-                (cfg.mealUncertainConfidence - 0.10).coerceIn(0.0, 1.0),
-
-            mealConfirmConfidence =
-                (cfg.mealConfirmConfidence - 0.20).coerceIn(0.0, 1.0)
+        "VERY_FAST" -> cfg.copy(
+            mealSlopeMin = (cfg.mealSlopeMin - 0.30).coerceAtLeast(0.15),
+            mealAccelMin = (cfg.mealAccelMin - 0.10).coerceAtLeast(0.03),
+            mealDeltaMin = (cfg.mealDeltaMin - 0.35).coerceAtLeast(0.25),
+            mealUncertainConfidence = (cfg.mealUncertainConfidence - 0.15).coerceIn(0.0, 1.0),
+            mealConfirmConfidence = (cfg.mealConfirmConfidence - 0.20).coerceIn(0.0, 1.0),
+            mealDetectThresholdMul = 0.80,
+            microRampThresholdMul = 0.85,
+            mealConfidenceSpeedMul = 1.25
         )
 
-
-        else -> cfg
-        // MODERATE = base
+        else -> cfg // MODERATE
     }
 }
+
 
 private fun applyCorrectionStyle(
     cfg: FCLvNextConfig
@@ -379,70 +411,93 @@ private fun applyCorrectionStyle(
 
     return when (cfg.correctionStyle) {
 
+        "VERY_CAUTIOUS" -> cfg.copy(
+            smallCorrectionMaxU = (cfg.smallCorrectionMaxU * 0.55).coerceAtLeast(0.05),
+            smallCorrectionCooldownMinutes = scaleCooldown(cfg.smallCorrectionCooldownMinutes, 2.2),
+            correctionHoldSlopeMax = cfg.correctionHoldSlopeMax + 0.15,
+            correctionHoldAccelMax = cfg.correctionHoldAccelMax + 0.05,
+            correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 0.60,
+            persistentAggressionMul = 0.70
+        )
+
         "CAUTIOUS" -> cfg.copy(
             smallCorrectionMaxU = (cfg.smallCorrectionMaxU * 0.70).coerceAtLeast(0.05),
             smallCorrectionCooldownMinutes = scaleCooldown(cfg.smallCorrectionCooldownMinutes, 1.7),
-
             correctionHoldSlopeMax = cfg.correctionHoldSlopeMax + 0.10,
             correctionHoldAccelMax = cfg.correctionHoldAccelMax + 0.03,
-            correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 0.70
+            correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 0.70,
+            persistentAggressionMul = 0.85
         )
 
         "PERSISTENT" -> cfg.copy(
             smallCorrectionMaxU = (cfg.smallCorrectionMaxU * 1.7).coerceAtMost(0.40),
             smallCorrectionCooldownMinutes = scaleCooldown(cfg.smallCorrectionCooldownMinutes, 0.6),
-
             correctionHoldSlopeMax = cfg.correctionHoldSlopeMax - 0.10,
             correctionHoldAccelMax = cfg.correctionHoldAccelMax - 0.03,
-            correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 1.30
+            correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 1.30,
+            persistentAggressionMul = 1.20
         )
 
-        else -> cfg
-        // NORMAL = base
+        "VERY_PERSISTENT" -> cfg.copy(
+            smallCorrectionMaxU = (cfg.smallCorrectionMaxU * 2.2).coerceAtMost(0.60),
+            smallCorrectionCooldownMinutes = scaleCooldown(cfg.smallCorrectionCooldownMinutes, 0.45),
+            correctionHoldSlopeMax = cfg.correctionHoldSlopeMax - 0.15,
+            correctionHoldAccelMax = cfg.correctionHoldAccelMax - 0.05,
+            correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 1.50,
+            persistentAggressionMul = 1.40
+
+        )
+
+        else -> cfg // NORMAL
     }
 }
+
 // ─────────────────────────────────────────────
 // 4) ✅ Dose distribution style (SMOOTH / BALANCED / PULSED)
 // Doel: vorm van delivery merkbaar maken zonder timing/correction te vermengen.
 // ─────────────────────────────────────────────
-private fun applyDoseDistributionStyle(cfg: FCLvNextConfig): FCLvNextConfig {
+private fun applyDoseDistributionStyle(
+    cfg: FCLvNextConfig
+): FCLvNextConfig {
 
     return when (cfg.doseDistributionStyle) {
 
+        "VERY_SMOOTH" -> cfg.copy(
+            hybridPercentage = 85,
+            smallDoseThresholdU = (cfg.smallDoseThresholdU * 1.50).coerceIn(0.35, 0.80),
+            microCapFracOfMaxSmb = (cfg.microCapFracOfMaxSmb * 0.70).coerceIn(0.05, 0.15),
+            smallCapFracOfMaxSmb = (cfg.smallCapFracOfMaxSmb * 0.70).coerceIn(0.10, 0.40),
+            absorptionDoseFactor = (cfg.absorptionDoseFactor * 0.70).coerceIn(0.08, 0.20)
+        )
+
         "SMOOTH" -> cfg.copy(
-            // meer basaal, minder SMB
-            hybridPercentage = 75,
-
-            // vaker "basal-only" gedrag bij kleine doses
+            hybridPercentage = 70,
             smallDoseThresholdU = (cfg.smallDoseThresholdU * 1.35).coerceIn(0.30, 0.70),
-
-            // kleinere micro/small caps -> minder tikjes
             microCapFracOfMaxSmb = (cfg.microCapFracOfMaxSmb * 0.85).coerceIn(0.05, 0.20),
             smallCapFracOfMaxSmb = (cfg.smallCapFracOfMaxSmb * 0.85).coerceIn(0.15, 0.50),
-
-            // kortere tail dosing rond absorptie/peak
-            absorptionDoseFactor = (cfg.absorptionDoseFactor * 0.85).coerceIn(0.08, 0.25)
+            absorptionDoseFactor = (cfg.absorptionDoseFactor * 0.85).coerceIn(0.10, 0.25)
         )
 
         "PULSED" -> cfg.copy(
-            // meer SMB, minder basaal
-            hybridPercentage = 25,
-
-            // sneller SMB-gedrag (minder vaak basal-only)
+            hybridPercentage = 30,
             smallDoseThresholdU = (cfg.smallDoseThresholdU * 0.75).coerceIn(0.20, 0.60),
-
-            // grotere micro/small caps -> duidelijkere pulsen
-            microCapFracOfMaxSmb = (cfg.microCapFracOfMaxSmb * 1.25).coerceIn(0.05, 0.25),
-            smallCapFracOfMaxSmb = (cfg.smallCapFracOfMaxSmb * 1.20).coerceIn(0.15, 0.70),
-
-            // iets langere tail dosing
-            absorptionDoseFactor = (cfg.absorptionDoseFactor * 1.25).coerceIn(0.10, 0.35)
+            microCapFracOfMaxSmb = (cfg.microCapFracOfMaxSmb * 1.25).coerceIn(0.08, 0.25),
+            smallCapFracOfMaxSmb = (cfg.smallCapFracOfMaxSmb * 1.20).coerceIn(0.20, 0.70),
+            absorptionDoseFactor = (cfg.absorptionDoseFactor * 1.25).coerceIn(0.15, 0.35)
         )
 
-        else -> cfg
-        // BALANCED = base: hybrid=50, threshold=0.40, caps=0.10/0.30, absorptionDoseFactor=0.15
+        "VERY_PULSED" -> cfg.copy(
+            hybridPercentage = 15,
+            smallDoseThresholdU = (cfg.smallDoseThresholdU * 0.60).coerceIn(0.15, 0.50),
+            microCapFracOfMaxSmb = (cfg.microCapFracOfMaxSmb * 1.50).coerceIn(0.10, 0.30),
+            smallCapFracOfMaxSmb = (cfg.smallCapFracOfMaxSmb * 1.50).coerceIn(0.25, 0.80),
+            absorptionDoseFactor = (cfg.absorptionDoseFactor * 1.50).coerceIn(0.20, 0.40)
+        )
+
+        else -> cfg // BALANCED
     }
 }
+
 
 
 

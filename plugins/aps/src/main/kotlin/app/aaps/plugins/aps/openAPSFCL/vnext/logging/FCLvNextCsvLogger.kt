@@ -5,6 +5,100 @@ import org.joda.time.DateTime
 import java.io.File
 import java.util.Locale
 
+
+data class FCLvNextCsvLogRow(
+
+    // ── Context ──
+    var ts: DateTime = DateTime.now(),
+    var isNight: Boolean = false,
+    var bg: Double = 0.0,
+    var target: Double = 0.0,
+
+    // ── Trends ──
+    var slope: Double = 0.0,
+    var accel: Double = 0.0,
+    var recentSlope: Double = 0.0,
+    var recentDelta5m: Double = 0.0,
+    var consistency: Double = 0.0,
+
+    // ── IOB ──
+    var iob: Double = 0.0,
+    var iobRatio: Double = 0.0,
+    var bgZone: String = "",
+    var doseAccess: String = "",
+
+    // ── Model ──
+    var effectiveISF: Double = 0.0,
+    var gain: Double = 0.0,
+    var energyBase: Double = 0.0,
+    var energyTotal: Double = 0.0,
+
+
+    var stagnationActive: Boolean = false,
+    var stagnationBoost: Double = 0.0,
+    var stagnationAccel: Double = 0.0,
+    var stagnationAccelLimit: Double = 0.0,
+
+    var rawDose: Double = 0.0,
+    var iobFactor: Double = 0.0,
+    var normalDose: Double = 0.0,
+
+    // ── Early ──
+    var earlyStage: Int = 0,
+    var earlyConfidence: Double = 0.0,
+    var earlyTargetU: Double = 0.0,
+
+    // ── Decision / phase ──
+    var mealState: String = "",
+    var commitFraction: Double = 0.0,
+    var minutesSinceCommit: Int = -1,
+
+    // ── Peak ──
+    var peakState: String = "",
+    var predictedPeak: Double = 0.0,
+    var peakIobBoost: Double = 1.0,
+    var effectiveIobRatio: Double = 0.0,
+    var peakBand: Int = 0,
+    var peakMaxSlope: Double = 0.0,
+    var peakMomentum: Double = 0.0,
+    var peakRiseSinceStart: Double = 0.0,
+    var peakEpisodeActive: Boolean = false,
+
+    var suppressForPeak: Boolean = false,
+    var absorptionActive: Boolean = false,
+    var reentrySignal: Boolean = false,
+    var decisionReason: String = "",
+
+    // ── Height learning (observe-only) ──
+    var heightIntent: String = "NONE",
+
+    // ── Rescue ──
+    var pred60: Double = 0.0,
+    var rescueState: String = "",
+    var rescueConfidence: Double = 0.0,
+    var rescueReason: String = "",
+
+    var profielNaam: String = "",
+    var mealDetectSpeed: String = "",
+    var correctionStyle: String = "",
+    var doseDistributionStyle: String = "",
+
+    // ── Execution ──
+    var finalDose: Double = 0.0,
+    var commandedDose: Double = 0.0,
+    var deliveredTotal: Double = 0.0,
+    var bolus: Double = 0.0,
+    var basalRate: Double = 0.0,
+
+    // ── Reserve ──
+    var reserveU: Double = 0.0,
+    var reserveAction: String = "NONE",
+    var reserveDeltaU: Double = 0.0,
+    var reserveAgeMin: Int = -1,
+
+    var shouldDeliver: Boolean = false
+)
+
 object FCLvNextCsvLogger {
 
     private const val FILE_NAME = "FCLvNext_Log.csv"
@@ -37,12 +131,7 @@ object FCLvNextCsvLogger {
         "gain",
         "energy_base",
         "energy_total",
-        "kDeltaBase",
-        "kSlopeBase",
-        "kAccelBase",
-        "kDeltaEff",
-        "kSlopeEff",
-        "kAccelEff",
+
         "stagnation_active",
         "stagnation_boost",
         "stagnation_accel",
@@ -59,9 +148,6 @@ object FCLvNextCsvLogger {
         // ── Decision / phase ──
         "meal_state",
         "commit_fraction",
-        "commit_base_min",
-        "commit_multiplier",
-        "commit_effective_min",
         "minutes_since_commit",
 
         // ── Peak prediction ──
@@ -79,11 +165,20 @@ object FCLvNextCsvLogger {
         "reentry_signal",
         "decision_reason",
 
+        // ── Height learning (observe-only) ──
+        "height_intent",
+
         // ── Rescue / hypo prevention ──
         "pred60",
         "rescue_state",
         "rescue_confidence",
         "rescue_reason",
+
+        "profielNaam",
+        "mealDetectSpeed",
+        "correctionStyle",
+        "doseDistributionStyle",
+
 
         // ── Execution ──
         "final_dose",
@@ -110,6 +205,90 @@ object FCLvNextCsvLogger {
         return File(dir, FILE_NAME)
     }
 
+    fun log(row: FCLvNextCsvLogRow) {
+        log(
+            ts = row.ts,
+            isNight = row.isNight,
+            bg = row.bg,
+            target = row.target,
+
+            slope = row.slope,
+            accel = row.accel,
+            recentSlope = row.recentSlope,
+            recentDelta5m = row.recentDelta5m,
+            consistency = row.consistency,
+
+            iob = row.iob,
+            iobRatio = row.iobRatio,
+            bgZone = row.bgZone,
+            doseAccess = row.doseAccess,
+
+            effectiveISF = row.effectiveISF,
+            gain = row.gain,
+            energyBase = row.energyBase,
+            energyTotal = row.energyTotal,
+
+
+            stagnationActive = row.stagnationActive,
+            stagnationBoost = row.stagnationBoost,
+            stagnationAccel = row.stagnationAccel,
+            stagnationAccelLimit = row.stagnationAccelLimit,
+
+            rawDose = row.rawDose,
+            iobFactor = row.iobFactor,
+            normalDose = row.normalDose,
+
+            earlyStage = row.earlyStage,
+            earlyConfidence = row.earlyConfidence,
+            earlyTargetU = row.earlyTargetU,
+
+            mealState = row.mealState,
+            commitFraction = row.commitFraction,
+            minutesSinceCommit = row.minutesSinceCommit,
+
+            peakState = row.peakState,
+            predictedPeak = row.predictedPeak,
+            peakIobBoost = row.peakIobBoost,
+            effectiveIobRatio = row.effectiveIobRatio,
+            peakBand = row.peakBand,
+            peakMaxSlope = row.peakMaxSlope,
+            peakMomentum = row.peakMomentum,
+            peakRiseSinceStart = row.peakRiseSinceStart,
+            peakEpisodeActive = row.peakEpisodeActive,
+
+            suppressForPeak = row.suppressForPeak,
+            absorptionActive = row.absorptionActive,
+            reentrySignal = row.reentrySignal,
+            decisionReason = row.decisionReason,
+
+            heightIntent = row.heightIntent,
+
+            pred60 = row.pred60,
+            rescueState = row.rescueState,
+            rescueConfidence = row.rescueConfidence,
+            rescueReason = row.rescueReason,
+
+            profielNaam = row.profielNaam,
+            mealDetectSpeed = row.mealDetectSpeed,
+            correctionStyle = row.correctionStyle,
+            doseDistributionStyle = row.doseDistributionStyle,
+
+            finalDose = row.finalDose,
+            commandedDose = row.commandedDose,
+            deliveredTotal = row.deliveredTotal,
+            bolus = row.bolus,
+            basalRate = row.basalRate,
+
+            reserveU = row.reserveU,
+            reserveAction = row.reserveAction,
+            reserveDeltaU = row.reserveDeltaU,
+            reserveAgeMin = row.reserveAgeMin,
+
+            shouldDeliver = row.shouldDeliver
+        )
+    }
+
+
     fun log(
         ts: DateTime = DateTime.now(),
         isNight: Boolean,
@@ -135,13 +314,6 @@ object FCLvNextCsvLogger {
         energyBase: Double,
         energyTotal: Double,
 
-        // learning (core)
-        kDeltaBase: Double,
-        kSlopeBase: Double,
-        kAccelBase: Double,
-        kDeltaEff: Double,
-        kSlopeEff: Double,
-        kAccelEff: Double,
 
         stagnationActive: Boolean,
         stagnationBoost: Double,
@@ -160,9 +332,6 @@ object FCLvNextCsvLogger {
         // phase / decision
         mealState: String,
         commitFraction: Double,
-        commitBaseMin: Double,
-        commitMultiplier: Double,
-        commitEffectiveMin: Double,
         minutesSinceCommit: Int,
 
         // peak
@@ -181,11 +350,18 @@ object FCLvNextCsvLogger {
         reentrySignal: Boolean,
         decisionReason: String,
 
+        heightIntent: String,
+
         // rescue
         pred60: Double,
         rescueState: String,
         rescueConfidence: Double,
         rescueReason: String,
+
+        profielNaam: String,
+        mealDetectSpeed: String,
+        correctionStyle: String,
+        doseDistributionStyle: String,
 
         // execution
         finalDose: Double,
@@ -234,12 +410,7 @@ object FCLvNextCsvLogger {
                 u2(gain),
                 e2(energyBase),
                 e2(energyTotal),
-                u2(kDeltaBase),
-                u2(kSlopeBase),
-                u2(kAccelBase),
-                u2(kDeltaEff),
-                u2(kSlopeEff),
-                u2(kAccelEff),
+
                 stagnationActive,
                 e2(stagnationBoost),
                 a2(stagnationAccel),
@@ -256,9 +427,6 @@ object FCLvNextCsvLogger {
                 // phase
                 mealState,
                 t2(commitFraction),
-                t2(commitBaseMin),
-                t2(commitMultiplier),
-                t2(commitEffectiveMin),
                 minutesSinceCommit,
 
                 // peak
@@ -281,6 +449,13 @@ object FCLvNextCsvLogger {
                 rescueState,
                 t2(rescueConfidence),
                 rescueReason.replace(SEP, ","),
+
+                profielNaam,
+                mealDetectSpeed,
+                correctionStyle,
+                doseDistributionStyle,
+
+                heightIntent,
 
                 // execution
                 u2(finalDose),

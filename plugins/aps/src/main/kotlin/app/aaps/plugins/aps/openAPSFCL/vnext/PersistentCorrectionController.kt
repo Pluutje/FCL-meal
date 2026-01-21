@@ -80,7 +80,7 @@ class PersistentCorrectionController(
 
         if (!persistentConfirmed) {
             return Result(
-                active = persistentCandidate,
+                active = false,
                 fired = false,
                 doseU = 0.0,
                 cooldownLeft = 0,

@@ -281,79 +281,108 @@ De instellingen zijn bewust overzichtelijk gehouden en ingedeeld in drie groepen
     <!-- ===============================
          Profielen & context
          =============================== -->
-    <string name="fcl_vnext_profile_title">📊 FCL Profiel</string>
-    <string name="fcl_vnext_profile_summary">Kies uit een van de 3 basis profielen: STRICT, BALANCED of AGGRESSIVE .</string>
 
-    <!-- FCLvNext profile selection -->
+    <string name="fcl_vnext_generic_choice_title">↳ keuzelijst</string>
+    <string name="fcl_vnext_profile_title">🔧 FCL Profiel</string>
+    <string name="fcl_vnext_profile_summary">
+Bepaalt hoe sterk FCL corrigeert (hoeveel insuline).
+Heeft GEEN invloed op timing of maaltijdherkenning.
+</string>
+
     <string-array name="fcl_vnext_profile_entries">
-        <item>Strict (maximale veiligheid)</item>
-        <item>Balanced (standaard)</item>
-        <item>Aggressive (sneller ingrijpen)</item>
+        <item>🛡️ Zeer voorzichtig (maximale veiligheid)</item>
+        <item>🧯 Voorzichtig</item>
+        <item>⚖️ Gebalanceerd (standaard)</item>
+        <item>🚀 Actief</item>
+        <item>🔥 Zeer actief (sneller corrigeren)</item>
     </string-array>
 
     <string-array name="fcl_vnext_profile_values">
+        <item>VERY_STRICT</item>
         <item>STRICT</item>
         <item>BALANCED</item>
         <item>AGGRESSIVE</item>
+        <item>VERY_AGGRESSIVE</item>
     </string-array>
+
 
     <!-- ===============================
      Timing (meal detect speed)
      =============================== -->
     <string name="fcl_vnext_meal_detect_speed_title">⏱️ Meal detect snelheid</string>
     <string name="fcl_vnext_meal_detect_speed_summary">
-Bepaalt hoe snel FCL een maaltijdstijging als “echt” herkent (timing). Heeft geen directe invloed op max dosis.
+Hoe vroeg FCL een stijging als “maaltijd” ziet.
+Beïnvloedt TIMING, niet maximale dosis.
 </string>
 
     <string-array name="fcl_vnext_meal_detect_speed_entries">
-        <item>Langzaam (later detecteren)</item>
-        <item>Moderate (gemiddeld detecteren)</item>
-        <item>Snel (eerder detecteren)</item>
-        <item>Extra Snel (nog eerder detecteren)</item>
+        <item>🐢 Zeer laat (duidelijke stijging nodig)</item>
+        <item>🐌 Laat</item>
+        <item>⚖️ Normaal (standaard)</item>
+        <item>⚡ Snel</item>
+        <item>🚨 Zeer snel (snelste detectie)</item>
     </string-array>
 
     <string-array name="fcl_vnext_meal_detect_speed_values">
+        <item>VERY_SLOW</item>
         <item>SLOW</item>
         <item>MODERATE</item>
         <item>FAST</item>
-        <item>EXTRA_FAST</item>
+        <item>VERY_FAST</item>
     </string-array>
+
 
     <!-- ===============================
      Correctie gedrag (persistence)
      =============================== -->
     <string name="fcl_vnext_correction_style_title">🔁 Correctie stijl</string>
-    <string name="fcl_vnext_correction_style_summary">Bepaalt hoe lang en hoe “volhardend” FCL bijstuurt als BG boven target blijft (zonder meal). Handig voor dawn/resistentie vs. hypo-gevoelig.</string>
+    <string name="fcl_vnext_correction_style_summary">
+Hoe volhardend FCL blijft corrigeren als glucose hoog blijft
+(zonder actieve maaltijd).
+</string>
 
     <string-array name="fcl_vnext_correction_style_entries">
-        <item>Cautious (voorzichtig, minder doorduwen)</item>
-        <item>Normal (standaard)</item>
-        <item>Persistent (vasthoudend bij hoog blijven)</item>
+        <item>🛑 Zeer terughoudend (hypo-gevoelig)</item>
+        <item>🧯 Voorzichtig</item>
+        <item>⚖️ Normaal (standaard)</item>
+        <item>🔁 Vasthoudend</item>
+        <item>🔂 Zeer vasthoudend (resistentie / dawn)</item>
     </string-array>
 
     <string-array name="fcl_vnext_correction_style_values">
+        <item>VERY_CAUTIOUS</item>
         <item>CAUTIOUS</item>
         <item>NORMAL</item>
         <item>PERSISTENT</item>
+        <item>VERY_PERSISTENT</item>
     </string-array>
+
 
     <!-- ===============================
      Dosis verhouding gedrag
      =============================== -->
 
     <string name="fcl_vnext_dose_distribution_title">💉 Dose distribution</string>
-    <string name="fcl_vnext_dose_distribution_summary">Hoe de dosis wordt verdeeld: meer basaal (smooth) of meer SMB (pulsed).</string>
+    <string name="fcl_vnext_dose_distribution_summary">
+Hoe insuline wordt verdeeld: meer basaal (smooth) of meer SMB (pulsen).
+</string>
+
     <string-array name="fcl_vnext_dose_distribution_entries">
-        <item>Smooth (meer basaal, minder pulsen)</item>
-        <item>Balanced (standaard)</item>
-        <item>Pulsed (meer SMB, duidelijkere tikken)</item>
+        <item>🌊 Ultra smooth (bijna alleen basaal)</item>
+        <item>🫧 Smooth</item>
+        <item>⚖️ Balanced (standaard)</item>
+        <item>🔨 Pulsed</item>
+        <item>⚡ Ultra pulsed (korte, sterke SMB’s)</item>
     </string-array>
 
     <string-array name="fcl_vnext_dose_distribution_values">
+        <item>VERY_SMOOTH</item>
         <item>SMOOTH</item>
         <item>BALANCED</item>
         <item>PULSED</item>
+        <item>VERY_PULSED</item>
     </string-array>
+
 
     <!-- ===============================
      Resistentie (Auto-Sens)

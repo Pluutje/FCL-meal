@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.LongSparseArray
+import androidx.annotation.StringRes
 import androidx.core.util.forEach
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
@@ -128,6 +129,38 @@ open class OpenAPSFCLPlugin @Inject constructor(
         .setDefault(),
     aapsLogger, rh
 ), APS, PluginConstraints {
+
+ /*   class AdaptiveInfoPreference(
+        ctx: Context,
+        @StringRes titleRes: Int,
+        @StringRes summaryRes: Int
+    ) : androidx.preference.Preference(ctx) {
+
+        init {
+            title = ctx.getString(titleRes)
+            summary = ctx.getString(summaryRes)
+            isSelectable = false
+            isEnabled = false
+        }
+    }   */
+ class AdaptiveInfoPreference(
+     ctx: Context,
+     @StringRes titleRes: Int,
+     @StringRes summaryRes: Int
+ ) : androidx.preference.Preference(ctx) {
+
+     init {
+         title = ctx.getString(titleRes)
+         summary = ctx.getString(summaryRes)
+
+         // ✅ custom layout met betere kleuren
+         layoutResource = R.layout.fcl_info_preference
+
+         isSelectable = false
+         isEnabled = false
+     }
+ }
+
 
 
 
@@ -541,14 +574,20 @@ open class OpenAPSFCLPlugin @Inject constructor(
                     summary = R.string.fcl_vnext_1_PROFIEL_summary
                 )
             )
-
-            // Profielkeuze
+// Profielkeuze
+            addPreference(
+                AdaptiveInfoPreference(
+                    context,
+                    R.string.fcl_vnext_profile_title,
+                    R.string.fcl_vnext_profile_summary
+                )
+            )
             addPreference(
                 AdaptiveListPreference(
                     ctx = context,
                     stringKey = StringKey.fcl_vnext_profile,
-                    title = R.string.fcl_vnext_profile_title,
-                    summary = R.string.fcl_vnext_profile_summary,
+                    title = R.string.fcl_vnext_generic_choice_title,
+                    summary = null,
                     entries = context.resources
                         .getStringArray(R.array.fcl_vnext_profile_entries)
                         .map { it as CharSequence }
@@ -559,14 +598,20 @@ open class OpenAPSFCLPlugin @Inject constructor(
                         .toTypedArray()
                 )
             )
-
-            // Meal detect speed (timing)
+            addPreference(
+                AdaptiveInfoPreference(
+                    context,
+                    R.string.fcl_vnext_meal_detect_speed_title,
+                    R.string.fcl_vnext_meal_detect_speed_summary
+                )
+            )
+    // Meal detect speed (timing)
             addPreference(
                 AdaptiveListPreference(
                     ctx = context,
                     stringKey = StringKey.fcl_vnext_meal_detect_speed,
-                    title = R.string.fcl_vnext_meal_detect_speed_title,
-                    summary = R.string.fcl_vnext_meal_detect_speed_summary,
+                    title = R.string.fcl_vnext_generic_choice_title,
+                    summary = null,
                     entries = context.resources
                         .getStringArray(R.array.fcl_vnext_meal_detect_speed_entries)
                         .map { it as CharSequence }
@@ -577,13 +622,20 @@ open class OpenAPSFCLPlugin @Inject constructor(
                         .toTypedArray()
                 )
             )
-            // Correction style (post-meal / persistent behavior)
+            addPreference(
+                AdaptiveInfoPreference(
+                    context,
+                    R.string.fcl_vnext_correction_style_title,
+                    R.string.fcl_vnext_correction_style_summary
+                )
+            )
+     // Correction style (post-meal / persistent behavior)
             addPreference(
                 AdaptiveListPreference(
                     ctx = context,
                     stringKey = StringKey.fcl_vnext_correction_style,
-                    title = R.string.fcl_vnext_correction_style_title,
-                    summary = R.string.fcl_vnext_correction_style_summary,
+                    title = R.string.fcl_vnext_generic_choice_title,
+                    summary = null,
                     entries = context.resources
                         .getStringArray(R.array.fcl_vnext_correction_style_entries)
                         .map { it as CharSequence }
@@ -594,13 +646,20 @@ open class OpenAPSFCLPlugin @Inject constructor(
                         .toTypedArray()
                 )
             )
-            // Insulin distribution
+     // Insulin distribution
+            addPreference(
+                AdaptiveInfoPreference(
+                    context,
+                    R.string.fcl_vnext_dose_distribution_title,
+                    R.string.fcl_vnext_dose_distribution_summary
+                )
+            )
             addPreference(
                 AdaptiveListPreference(
                     ctx = context,
                     stringKey = StringKey.fcl_vnext_dose_distribution_style,
-                    title = R.string.fcl_vnext_dose_distribution_title,
-                    summary = R.string.fcl_vnext_dose_distribution_summary,
+                    title = R.string.fcl_vnext_generic_choice_title,
+                    summary = null,
                     entries = context.resources
                         .getStringArray(R.array.fcl_vnext_dose_distribution_entries)
                         .map { it as CharSequence }
