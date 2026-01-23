@@ -159,4 +159,11 @@ class EpisodeTracker {
         private const val END_INACTIVE_TICKS = 3    // 3×5 min = 15 min “signal off”
         private const val MIN_EPISODE_MINUTES = 15  // niet meteen na start stoppen
     }
+
+    fun totalEpisodes(): Long = nextId - 1L
+
+    fun hasActiveEpisode(): Boolean = activeEpisode != null
+
+    fun activeEpisodeStart(): DateTime? = activeEpisode?.startTime
+
 }

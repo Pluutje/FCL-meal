@@ -19,7 +19,7 @@ class FCLvNextObsOrchestrator(
     private val summarizer: FCLvNextObsEpisodeSummarizer,
     private val axisScorer: FCLvNextObsAxisScorer,
     private val confidenceAccumulator: FCLvNextObsConfidenceAccumulator,
-    private val adviceEmitter: FCLvNextObsAdviceEmitter
+    private val adviceEmitter: FCLvNextObsAdviceEmitter,
 ) {
 
     /**
@@ -27,6 +27,11 @@ class FCLvNextObsOrchestrator(
      *
      * @return eventueel een AdviceBundle (of null als er niets te melden is)
      */
+    private var lastSnapshot: FCLvNextObsSnapshot? = null
+    private var lastDeliveryConfidence: Double = 1.0
+
+
+
     fun onFiveMinuteTick(
         now: DateTime,
         isNight: Boolean,
@@ -49,6 +54,9 @@ class FCLvNextObsOrchestrator(
         predictedPeakAtStart: Double?,
         deliveryConfidence: Double
     ): FCLvNextObsAdviceBundle? {
+
+        lastDeliveryConfidence = deliveryConfidence.coerceIn(0.0, 1.0)
+        rebuildSnapshot(now)
 
         val event = episodeTracker.onFiveMinuteTick(
             now = now,
@@ -120,9 +128,42 @@ class FCLvNextObsOrchestrator(
             )
         }
 
+
+
         return adviceEmitter.emit(
             now = now,
             topSignals = topSignals
         )
     }
+
+    private fun rebuildSnapshot(now: DateTime) {
+        val axisSnapshots =
+            Axis.entries.map { axis ->
+                confidenceAccumulator.buildAxisSnapshot(
+                    now = now,
+                    axis = axis,
+                    emitThreshold = confidenceAccumulator.emitThreshold()
+                )
+            }
+
+        val snapshotStatus =
+            if (axisSnapshots.any { it.status == AxisStatus.STRUCTURAL_SIGNAL })
+                SnapshotStatus.SIGNAL_PRESENT
+            else
+                SnapshotStatus.OBSERVING
+
+        lastSnapshot =
+            FCLvNextObsSnapshot(
+                createdAt = now,
+                totalEpisodes = episodeTracker.totalEpisodes(),
+                activeEpisode = episodeTracker.hasActiveEpisode(),
+                activeEpisodeStartedAt = episodeTracker.activeEpisodeStart(),
+                deliveryConfidence = lastDeliveryConfidence,
+                status = snapshotStatus,
+                axes = axisSnapshots
+            )
+    }
+
+
+    fun getCurrentSnapshot(): FCLvNextObsSnapshot? = lastSnapshot
 }

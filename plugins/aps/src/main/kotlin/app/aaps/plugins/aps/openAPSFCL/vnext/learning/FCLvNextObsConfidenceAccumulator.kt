@@ -358,4 +358,76 @@ class FCLvNextObsConfidenceAccumulator(
     }
 
     private fun fmt(x: Double): String = String.format("%.2f", x)
+
+    fun emitThreshold(): Double = cfg.emitMinConfidence
+
+    fun buildAxisSnapshot(
+        now: DateTime,
+        axis: Axis,
+        emitThreshold: Double
+    ): AxisSnapshot {
+
+        val relevant = buckets
+            .filterKeys { it.first == axis }
+            .values
+            .flatten()
+
+        val total = relevant.size
+        if (total == 0) {
+            return AxisSnapshot(
+                axis = axis,
+                percentages = emptyMap(),
+                dominantOutcome = null,
+                dominantConfidence = 0.0,
+                status = AxisStatus.NO_DIRECTION,
+                episodesSeen = 0,
+                lastEpisodeAt = null
+            )
+        }
+
+        val perOutcome = relevant.groupBy { it.outcome }
+
+        val percentages =
+            perOutcome.mapValues { (_, list) ->
+                100.0 * list.size.toDouble() / total.toDouble()
+            }
+
+        val dominantEntry =
+            perOutcome.maxByOrNull { it.value.size }
+
+        val dominantOutcome = dominantEntry?.key
+
+        val dominantConfidence =
+            dominantOutcome?.let {
+                buckets[axis to it]
+                    ?.let { q -> computeSupportScoreOnly(now, q) }
+                    ?: 0.0
+            } ?: 0.0
+
+        val status =
+            when {
+                dominantConfidence >= emitThreshold ->
+                    AxisStatus.STRUCTURAL_SIGNAL
+                dominantConfidence >= emitThreshold * 0.6 ->
+                    AxisStatus.WEAK_SIGNAL
+                else ->
+                    AxisStatus.NO_DIRECTION
+            }
+
+        val lastSeen =
+            dominantOutcome?.let {
+                buckets[axis to it]?.firstOrNull()?.at
+            }
+
+        return AxisSnapshot(
+            axis = axis,
+            percentages = percentages,
+            dominantOutcome = dominantOutcome,
+            dominantConfidence = dominantConfidence,
+            status = status,
+            episodesSeen = total,
+            lastEpisodeAt = lastSeen
+        )
+    }
+
 }

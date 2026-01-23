@@ -449,7 +449,7 @@ class DetermineBasalFCL @Inject constructor(
 
 // Debug / console output (read-only)
 
-
+            val snapshot = obsOrchestrator.getCurrentSnapshot()
 
             val statusFormatter = FCLvNextStatusFormatter(preferences)
 
@@ -461,7 +461,8 @@ class DetermineBasalFCL @Inject constructor(
                 shouldDeliver = shouldDeliver,
                 activityLog = activity.log,
                 resistanceLog = resistanceLog,
-                metricsText = fclMetrics.getUserStatsString(isNight)
+                metricsText = fclMetrics.getUserStatsString(isNight),
+                learningSnapshot = snapshot
 
             )
 
@@ -469,15 +470,23 @@ class DetermineBasalFCL @Inject constructor(
             uiText.split("\n").forEach { consoleError.add(it) }
             consoleError.add("\n")
 
-            if (obsAdviceBundle != null) {
-                consoleError.add(obsAdviceBundle.debugSummary)
-                obsAdviceBundle.advices.forEach { a ->
+
+
+       /*     if (snapshot != null) {
+                consoleError.add(
+                    "[OBS] Snapshot: episodes=${snapshot.totalEpisodes} " +
+                        "status=${snapshot.status} " +
+                        "deliveryConf=${"%.2f".format(snapshot.deliveryConfidence)}"
+                )
+
+                snapshot.axes.forEach { a ->
                     consoleError.add(
-                        "[OBS] ${a.axis}/${a.outcome} " +
-                            "conf=${"%.2f".format(a.confidence)} :: ${a.title}"
+                        "[OBS] ${a.axis} ${a.status} " +
+                            "${a.percentages.entries.joinToString { "${it.key}=${"%.0f".format(it.value)}%" }}"
                     )
                 }
-            }
+            }    */
+
 
         } else {
             consoleError.add("FCLvNext skipped: Need more BG data ${bgHistoryPoints.size}/10")

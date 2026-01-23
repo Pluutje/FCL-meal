@@ -3,6 +3,7 @@ package app.aaps.plugins.aps.openAPSFCL.vnext
 import org.joda.time.DateTime
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.StringKey
+import app.aaps.plugins.aps.openAPSFCL.vnext.learning.*
 
 
 class FCLvNextStatusFormatter(private val prefs: Preferences) {
@@ -196,6 +197,54 @@ class FCLvNextStatusFormatter(private val prefs: Preferences) {
         return sb.toString().trimEnd()
     }
 
+    private fun buildLearningSnapshotBlock(
+        snapshot: FCLvNextObsSnapshot?
+    ): String {
+
+        if (snapshot == null) {
+            return """
+📚 LEARNING STATUS
+─────────────────────
+Nog geen observaties beschikbaar
+""".trimIndent()
+        }
+
+        val sb = StringBuilder()
+
+        sb.append("📚 LEARNING STATUS\n")
+        sb.append("─────────────────────\n")
+        sb.append("• Laatste analyse : ${snapshot.createdAt.toString("HH:mm:ss")}\n")
+        sb.append("• Episodes       : ${snapshot.totalEpisodes}\n")
+        sb.append("• Delivery conf  : ${"%.2f".format(snapshot.deliveryConfidence)}\n")
+        sb.append("• Status         : ${snapshot.status}\n")
+
+        snapshot.axes.forEach { axis ->
+            sb.append("\n")
+            sb.append("${axis.axis}\n")
+            sb.append("─────────────────────\n")
+
+            if (axis.percentages.isEmpty()) {
+                sb.append("• Nog geen data\n")
+            } else {
+                axis.percentages
+                    .toList()
+                    .sortedByDescending { it.second }
+                    .forEach { (outcome, pct) ->
+                        sb.append(
+                            "• ${outcome.name.padEnd(10)} ${"%.0f".format(pct)}%\n"
+                        )
+                    }
+
+                sb.append("• Dominant : ${axis.dominantOutcome ?: "—"}\n")
+                sb.append(
+                    "• Confidence : ${"%.2f".format(axis.dominantConfidence)} (${axis.status})\n"
+                )
+            }
+        }
+
+        return sb.toString().trimEnd()
+    }
+
 
 
     fun buildStatus(
@@ -206,7 +255,8 @@ class FCLvNextStatusFormatter(private val prefs: Preferences) {
         shouldDeliver: Boolean,
         activityLog: String?,
         resistanceLog: String?,
-        metricsText: String?
+        metricsText: String?,
+        learningSnapshot: FCLvNextObsSnapshot?
 
     ): String {
 
@@ -242,6 +292,7 @@ ${resistanceLog ?: "Geen resistentie-log"}
 """.trimIndent()
 
         val metricsStatus = """
+            
 📊 GLUCOSE STATISTIEKEN
 ─────────────────────
 ${metricsText ?: "Nog geen data"}
@@ -251,7 +302,7 @@ ${metricsText ?: "Nog geen data"}
 
         return """
 ════════════════════════
- 🧠 FCL vNext V3 v1.1.0
+ 🧠 FCL vNext V3 v1.4.1
 ════════════════════════
 • Profiel              : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}
 • Meal detect          : ${mealDetectLabel(prefs.get(StringKey.fcl_vnext_meal_detect_speed))}
@@ -266,6 +317,8 @@ $fclCore
 $activityStatus
 
 $resistanceStatus
+
+${buildLearningSnapshotBlock(learningSnapshot)}
 
 $metricsStatus
 """.trimIndent()
