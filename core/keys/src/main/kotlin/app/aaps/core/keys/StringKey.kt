@@ -70,7 +70,8 @@ enum class StringKey(
     fcl_vnext_resistance_behavior("fcl_vnext_resistance_behavior", "NORMAL"),
     fcl_vnext_resistance_stability("fcl_vnext_resistance_stability", "STANDARD"),
 
-    fcl_vnext_learning_snapshot_json(key = "fcl_vnext_learning_snapshot_json", ""),
+    fcl_vnext_obs_learning_state(key = "fcl_vnext_obs_learning_state", ""),
+
     fcl_vnext_learning_parameters_json(key = "fcl_vnext_learning_parameters_json", ""),
 
 }

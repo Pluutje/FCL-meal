@@ -57,6 +57,7 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.learning.EmptyInsulinDeliveryProvid
 import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextBgHistoryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsBgProviderAdapter
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsInsulinDeliveryProvider
+import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsLearningStore
 
 @Singleton
 
@@ -86,7 +87,9 @@ class DetermineBasalFCL @Inject constructor(
             diaMinutes = 540.0 // pas aan als jij DIA anders wil
         )
 
-    private val obsOrchestrator =
+    private val obsLearningStore = FCLvNextObsLearningStore(preferences)
+
+    private val obsOrchestrator: FCLvNextObsOrchestrator =
         FCLvNextObsOrchestrator(
             episodeTracker = EpisodeTracker(),
             summarizer = FCLvNextObsEpisodeSummarizer(
@@ -94,15 +97,21 @@ class DetermineBasalFCL @Inject constructor(
                 insulinProvider = obsInsulinProvider
             ),
             axisScorer = FCLvNextObsAxisScorer(),
-            confidenceAccumulator = FCLvNextObsConfidenceAccumulator(),
+            confidenceAccumulator = FCLvNextObsConfidenceAccumulator().also { acc ->
+                // 🔁 RESTORE (1× bij opstart)
+                obsLearningStore.restore(acc)
+            },
             adviceEmitter = FCLvNextObsAdviceEmitter()
         )
 
 
-
-
     private val consoleError = mutableListOf<String>()
     private val consoleLog = mutableListOf<String>()
+
+    init {
+
+        obsOrchestrator.attachLearningStore(obsLearningStore)
+    }
 
     private fun Double.toFixed2(): String = DecimalFormat("0.00#").format(round(this, 2))
 
@@ -182,28 +191,6 @@ class DetermineBasalFCL @Inject constructor(
 
  // *************************************************************************************************************
 
-/*   private fun getHistoricalBGData(hoursBack: Int = 2): List<BGDataPoint> {
-        val now = dateUtil.now()
-        val startTime = now - T.hours(2).msecs()
-        val endTime = now
-
-        val bgReadings = persistenceLayer.getBgReadingsDataFromTimeToTime(startTime, endTime, false)
-
-        if (bgReadings.isEmpty()) {
-            return emptyList()
-        }
-
-        // Converteer naar FCL format en zorg voor consistente volgorde (oudste eerst)
-        return bgReadings
-            .sortedBy { it.timestamp }
-            .map { reading ->
-                BGDataPoint(
-                    timestamp = DateTime(reading.timestamp),
-                    bg = reading.value / 18.0, // mg/dL naar mmol/L
-                    iob = 0.0 // Wordt later aangevuld
-                )
-            }
-    }    */
 
 
 
@@ -416,40 +403,61 @@ class DetermineBasalFCL @Inject constructor(
             )
 
             val obsAdviceBundle =
-                obsOrchestrator.onFiveMinuteTick(
-                    now = DateTime.now(),
-                    isNight = isNight,
+                try {
+                    obsOrchestrator.onFiveMinuteTick(
+                        now = DateTime.now(),
+                        isNight = isNight,
 
-                    peakActive =
-                        advice.statusText.contains("PeakEstimate=WATCHING") ||
-                            advice.statusText.contains("PeakEstimate=CONFIRMED"),
+                        peakActive =
+                            advice.statusText.contains("PeakEstimate=WATCHING") ||
+                                advice.statusText.contains("PeakEstimate=CONFIRMED"),
 
-                    mealSignalActive =
-                        advice.statusText.contains("MealSignal=CONFIRMED") ||
-                            advice.statusText.contains("MealSignal=UNCERTAIN"),
+                        mealSignalActive =
+                            advice.statusText.contains("MealSignal=CONFIRMED") ||
+                                advice.statusText.contains("MealSignal=UNCERTAIN"),
 
-                    prePeakCommitWindow =
-                        advice.statusText.contains("PrePeakCommitWindow=YES"),
+                        prePeakCommitWindow =
+                            advice.statusText.contains("PrePeakCommitWindow=YES"),
 
-                    rescueConfirmed =
-                        advice.statusText.contains("RESCUE") &&
-                            advice.statusText.contains("CONFIRMED"),
+                        rescueConfirmed =
+                            advice.statusText.contains("RESCUE") &&
+                                advice.statusText.contains("CONFIRMED"),
 
-                    downtrendLocked =
-                        advice.statusText.contains("DOWNTREND LOCKED"),
+                        downtrendLocked =
+                            advice.statusText.contains("DOWNTREND LOCKED"),
 
-                    slope = 0.0,              // later echte waarden
-                    acceleration = 0.0,
-                    deltaToTarget = 0.0,
-                    consistency = 1.0,
+                        bgMmol = bgNowMmol,
+                        targetMmol = target_bg,
+                        currentIob = currentIOB,
 
-                    predictedPeakAtStart = null,
-                    deliveryConfidence = deliveryCheck.confidenceMultiplier
-                )
+                        slope = 0.0,              // later echte waarden
+                        acceleration = 0.0,
+                        deltaToTarget = 0.0,
+                        consistency = 1.0,
+
+                        predictedPeakAtStart = null,
+                        deliveryConfidence = deliveryCheck.confidenceMultiplier
+                    )
+                } catch (t: Throwable) {
+                    // 🔒 HARD SAFETY NET
+                    consoleError.add(
+                        "[OBS] ❌ disabled for this cycle: ${t.javaClass.simpleName}: ${t.message}"
+                    )
+                    null
+                }
+
+
 
 // Debug / console output (read-only)
 
-            val snapshot = obsOrchestrator.getCurrentSnapshot()
+            val snapshot =
+                try {
+                    obsOrchestrator.getCurrentSnapshot()
+                } catch (t: Throwable) {
+                    consoleError.add("[OBS] ❌ snapshot failed: ${t.message}")
+                    null
+                }
+
 
             val statusFormatter = FCLvNextStatusFormatter(preferences)
 
@@ -472,20 +480,7 @@ class DetermineBasalFCL @Inject constructor(
 
 
 
-       /*     if (snapshot != null) {
-                consoleError.add(
-                    "[OBS] Snapshot: episodes=${snapshot.totalEpisodes} " +
-                        "status=${snapshot.status} " +
-                        "deliveryConf=${"%.2f".format(snapshot.deliveryConfidence)}"
-                )
 
-                snapshot.axes.forEach { a ->
-                    consoleError.add(
-                        "[OBS] ${a.axis} ${a.status} " +
-                            "${a.percentages.entries.joinToString { "${it.key}=${"%.0f".format(it.value)}%" }}"
-                    )
-                }
-            }    */
 
 
         } else {

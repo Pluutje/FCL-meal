@@ -35,5 +35,9 @@ data class FCLvNextObsSnapshot(
     val status: SnapshotStatus,
 
     // Per as
-    val axes: List<AxisSnapshot>
+    val axes: List<AxisSnapshot>,
+
+    // ⬇️ laatste episode
+    val lastEpisodeStart: DateTime?,
+    val lastEpisodeEnd: DateTime?
 )

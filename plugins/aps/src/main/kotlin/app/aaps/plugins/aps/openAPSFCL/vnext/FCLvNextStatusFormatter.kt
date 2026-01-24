@@ -218,29 +218,82 @@ Nog geen observaties beschikbaar
         sb.append("• Delivery conf  : ${"%.2f".format(snapshot.deliveryConfidence)}\n")
         sb.append("• Status         : ${snapshot.status}\n")
 
+        sb.append("\n🧩 EPISODE STATUS\n")
+        sb.append("─────────────────────\n")
+
+        if (snapshot.lastEpisodeStart != null && snapshot.lastEpisodeEnd != null) {
+            val mins =
+                ((snapshot.lastEpisodeEnd.millis - snapshot.lastEpisodeStart.millis) / 60000)
+
+            sb.append(
+                "• Laatste episode : " +
+                    "${snapshot.lastEpisodeStart.toString("HH:mm")} → " +
+                    "${snapshot.lastEpisodeEnd.toString("HH:mm")} " +
+                    "(${mins} min)\n"
+            )
+        } else {
+            sb.append("• Laatste episode : —\n")
+        }
+
+        if (snapshot.activeEpisode && snapshot.activeEpisodeStartedAt != null) {
+            sb.append(
+                "• Actieve episode : sinds " +
+                    snapshot.activeEpisodeStartedAt.toString("HH:mm") + "\n"
+            )
+        } else {
+            sb.append("• Actieve episode : geen\n")
+        }
+
+
         snapshot.axes.forEach { axis ->
             sb.append("\n")
             sb.append("${axis.axis}\n")
             sb.append("─────────────────────\n")
 
-            if (axis.percentages.isEmpty()) {
-                sb.append("• Nog geen data\n")
-            } else {
-                axis.percentages
-                    .toList()
-                    .sortedByDescending { it.second }
-                    .forEach { (outcome, pct) ->
-                        sb.append(
-                            "• ${outcome.name.padEnd(10)} ${"%.0f".format(pct)}%\n"
-                        )
-                    }
+            val totalEpisodes = snapshot.totalEpisodes.toInt()
+            val nonOkEpisodes = axis.episodesSeen
+            val okEpisodes = (totalEpisodes - nonOkEpisodes).coerceAtLeast(0)
 
-                sb.append("• Dominant : ${axis.dominantOutcome ?: "—"}\n")
+            // Statusregel
+            val statusText = when (axis.status) {
+                AxisStatus.NO_DIRECTION -> "nog geen richting"
+                AxisStatus.WEAK_SIGNAL -> "zwak signaal"
+                AxisStatus.STRUCTURAL_SIGNAL -> "structureel signaal"
+            }
+
+            sb.append("• ").append(statusText).append("\n")
+
+            // Detailregel: altijd tonen
+            val details = mutableListOf<String>()
+
+            if (okEpisodes > 0) {
+                details.add("${okEpisodes}× OK")
+            }
+
+            axis.percentages
+                .toList()
+                .sortedByDescending { it.second }
+                .forEach { (outcome, pct) ->
+                    val count =
+                        ((pct / 100.0) * nonOkEpisodes).toInt().coerceAtLeast(1)
+                    details.add("${count}× ${outcome.name}")
+                }
+
+            if (details.isNotEmpty()) {
+                sb.append("  (")
+                    .append(details.joinToString(", "))
+                    .append(")\n")
+            }
+
+            // Extra info alleen als er richting begint te ontstaan
+            if (axis.dominantOutcome != null && axis.status != AxisStatus.NO_DIRECTION) {
                 sb.append(
-                    "• Confidence : ${"%.2f".format(axis.dominantConfidence)} (${axis.status})\n"
+                    "  ↳ dominant: ${axis.dominantOutcome} " +
+                        "(conf ${"%.2f".format(axis.dominantConfidence)})\n"
                 )
             }
         }
+
 
         return sb.toString().trimEnd()
     }
@@ -302,7 +355,7 @@ ${metricsText ?: "Nog geen data"}
 
         return """
 ════════════════════════
- 🧠 FCL vNext V3 v1.4.1
+ 🧠 FCL vNext V3 v1.6.0
 ════════════════════════
 • Profiel              : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}
 • Meal detect          : ${mealDetectLabel(prefs.get(StringKey.fcl_vnext_meal_detect_speed))}

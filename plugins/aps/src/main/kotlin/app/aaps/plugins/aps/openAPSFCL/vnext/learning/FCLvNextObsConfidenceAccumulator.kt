@@ -430,4 +430,63 @@ class FCLvNextObsConfidenceAccumulator(
         )
     }
 
+
+// ─────────────────────────────────────────────
+// 🔹 Persistence support
+// ─────────────────────────────────────────────
+
+    fun exportState(
+        version: String,
+        now: DateTime
+    ): StoredLearningState {
+
+        val allEvidence =
+            buckets.values
+                .flatten()
+                .map {
+                    StoredEvidence(
+                        atMillis = it.at.millis,
+                        episodeId = it.episodeId,
+                        axis = it.axis,
+                        outcome = it.outcome,
+                        strength = it.strength,
+                        weight = it.weight
+                    )
+                }
+
+        return StoredLearningState(
+            version = version,
+            savedAtMillis = now.millis,
+            evidence = allEvidence
+        )
+    }
+
+    fun importState(
+        state: StoredLearningState
+    ) {
+        buckets.clear()
+
+        state.evidence.forEach { e ->
+            val key = e.axis to e.outcome
+            val q = buckets.getOrPut(key) { ArrayDeque() }
+
+            q.add(
+                Evidence(
+                    at = DateTime(e.atMillis),
+                    episodeId = e.episodeId,
+                    axis = e.axis,
+                    outcome = e.outcome,
+                    strength = e.strength,
+                    weight = e.weight
+                )
+            )
+        }
+    }
+
+    /**
+     * ⚠️ Alleen gebruiken voor init/restore
+     */
+    fun confidenceAccumulatorUnsafe(): FCLvNextObsConfidenceAccumulator = this
+
+
 }

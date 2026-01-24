@@ -225,6 +225,8 @@
     <!--    FCL vNext -->
     <string name="openaps_fcl">FCL v3</string>
 
+
+
     <string name="fcl_vnext_gain_day_title">Daggevoeligheid insuline</string>
     <string name="fcl_vnext_gain_day_summary">Algemene sterkte van FCL vNext overdag.\nHoger = meer insuline per situatie.\nLager = behoudender en rustiger gedrag.</string>
     <string name="fcl_vnext_gain_night_title">Nachtgevoeligheid insuline</string>

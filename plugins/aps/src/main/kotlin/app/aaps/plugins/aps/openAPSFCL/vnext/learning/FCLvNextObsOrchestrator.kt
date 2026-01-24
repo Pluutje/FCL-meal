@@ -29,14 +29,14 @@ class FCLvNextObsOrchestrator(
      */
     private var lastSnapshot: FCLvNextObsSnapshot? = null
     private var lastDeliveryConfidence: Double = 1.0
-
+    private var learningStore: FCLvNextObsLearningStore? = null
+    private var lastFinishedEpisode: Episode? = null
 
 
     fun onFiveMinuteTick(
         now: DateTime,
         isNight: Boolean,
 
-        // episode start/stop signalen
         peakActive: Boolean,
         mealSignalActive: Boolean,
         prePeakCommitWindow: Boolean,
@@ -44,13 +44,15 @@ class FCLvNextObsOrchestrator(
         rescueConfirmed: Boolean,
         downtrendLocked: Boolean,
 
-        // trend info
+        bgMmol: Double,
+        targetMmol: Double,
+        currentIob: Double,
+
         slope: Double,
         acceleration: Double,
         deltaToTarget: Double,
         consistency: Double,
 
-        // optioneel (mag null)
         predictedPeakAtStart: Double?,
         deliveryConfidence: Double
     ): FCLvNextObsAdviceBundle? {
@@ -61,21 +63,31 @@ class FCLvNextObsOrchestrator(
         val event = episodeTracker.onFiveMinuteTick(
             now = now,
             isNight = isNight,
+
             peakActive = peakActive,
             mealSignalActive = mealSignalActive,
             prePeakCommitWindow = prePeakCommitWindow,
+
             rescueConfirmed = rescueConfirmed,
             downtrendLocked = downtrendLocked,
+
+            bgMmol = bgMmol,
+            targetMmol = targetMmol,
+            currentIob = currentIob,
+
             slope = slope,
             acceleration = acceleration,
             deltaToTarget = deltaToTarget,
             consistency = consistency
         )
 
+
         // Alleen iets doen bij einde van episode
         if (event !is EpisodeEvent.Finished) return null
 
         val episode = event.episode
+
+        lastFinishedEpisode = episode
 
         // Excluded episodes tellen niet mee voor learning
         if (episode.excluded) return null
@@ -101,6 +113,13 @@ class FCLvNextObsOrchestrator(
             observations = observations,
             deliveryConfidence = deliveryConfidence
         )
+
+        // 💾 Persist learning state (crash-safe)
+        try {
+            learningStore?.save(confidenceAccumulator, now)
+        } catch (_: Throwable) {
+            // learning mag NOOIT crashen
+        }
 
         // 4️⃣ Adviezen genereren (indien structureel)
         val topSignals =
@@ -152,6 +171,8 @@ class FCLvNextObsOrchestrator(
             else
                 SnapshotStatus.OBSERVING
 
+        val last = lastFinishedEpisode
+
         lastSnapshot =
             FCLvNextObsSnapshot(
                 createdAt = now,
@@ -160,10 +181,19 @@ class FCLvNextObsOrchestrator(
                 activeEpisodeStartedAt = episodeTracker.activeEpisodeStart(),
                 deliveryConfidence = lastDeliveryConfidence,
                 status = snapshotStatus,
-                axes = axisSnapshots
+                axes = axisSnapshots,
+                lastEpisodeStart = last?.startTime,
+                lastEpisodeEnd = last?.endTime
             )
     }
 
 
     fun getCurrentSnapshot(): FCLvNextObsSnapshot? = lastSnapshot
+
+    fun attachLearningStore(store: FCLvNextObsLearningStore) {
+        this.learningStore = store
+    }
+
+    fun getLastFinishedEpisode(): Episode? = lastFinishedEpisode
+
 }

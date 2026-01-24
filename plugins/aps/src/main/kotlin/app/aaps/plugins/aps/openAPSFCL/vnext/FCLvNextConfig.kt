@@ -238,18 +238,20 @@ fun loadFCLvNextConfig(
         maxTempBasalRate = 15.0,
 
         // meal detect
-        mealSlopeMin = 0.60,
+        mealSlopeMin = 0.45,
         mealSlopeSpan = 0.8,
-        mealAccelMin = 0.15,
+        mealAccelMin = 0.10,
         mealAccelSpan = 0.6,
-        mealDeltaMin = 0.80,
+        mealDeltaMin = 0.60,
         mealDeltaSpan = 1.0,
-        mealUncertainConfidence = 0.35,
-        mealConfirmConfidence = 0.70,
-        mealConfidenceSpeedMul = 1.0,
+        mealUncertainConfidence = 0.30,
+        mealConfirmConfidence = 0.60,
 
-         mealDetectThresholdMul = 1.0,   // beïnvloedt detectMealSignal
-         microRampThresholdMul = 1.0,
+        mealDetectThresholdMul = 0.9,
+        microRampThresholdMul = 0.92,
+        mealConfidenceSpeedMul = 1.1,
+
+
 
         // micro-hold
         correctionHoldSlopeMax = -0.25,
@@ -318,27 +320,27 @@ private fun applyProfileDoseStrength(
     return when (cfg.profielNaam) {
 
         "VERY_STRICT" -> cfg.copy(
-            doseStrengthMul = 0.75,
-            maxCommitFractionMul = 0.65,
-            microDoseMul = 0.70
+            doseStrengthMul = cfg.doseStrengthMul - 0.25,
+            maxCommitFractionMul = cfg.maxCommitFractionMul - 0.35,
+            microDoseMul = cfg.microDoseMul - 0.30
         )
 
         "STRICT" -> cfg.copy(
-            doseStrengthMul = 0.85,
-            maxCommitFractionMul = 0.80,
-            microDoseMul = 0.85
+            doseStrengthMul = cfg.doseStrengthMul - 0.15,
+            maxCommitFractionMul = cfg.maxCommitFractionMul - 0.20,
+            microDoseMul = cfg.microDoseMul - 0.15
         )
 
         "AGGRESSIVE" -> cfg.copy(
-            doseStrengthMul = 1.15,
-            maxCommitFractionMul = 1.20,
-            microDoseMul = 1.15
+            doseStrengthMul = cfg.doseStrengthMul + 0.15,
+            maxCommitFractionMul = cfg.maxCommitFractionMul + 0.20,
+            microDoseMul = cfg.microDoseMul + 0.15
         )
 
         "VERY_AGGRESSIVE" -> cfg.copy(
-            doseStrengthMul = 1.30,
-            maxCommitFractionMul = 1.40,
-            microDoseMul = 1.30
+            doseStrengthMul = cfg.doseStrengthMul + 0.30,
+            maxCommitFractionMul = cfg.maxCommitFractionMul + 0.40,
+            microDoseMul = cfg.microDoseMul + 0.30
         )
 
         else -> cfg // BALANCED
@@ -359,9 +361,9 @@ private fun applyMealDetectSpeed(
             mealDeltaMin = cfg.mealDeltaMin + 0.35,
             mealUncertainConfidence = (cfg.mealUncertainConfidence + 0.15).coerceIn(0.0, 1.0),
             mealConfirmConfidence = (cfg.mealConfirmConfidence + 0.10).coerceIn(0.0, 1.0),
-            mealDetectThresholdMul = 1.20,
-            microRampThresholdMul = 1.15,
-            mealConfidenceSpeedMul = 0.85
+            mealDetectThresholdMul = cfg.mealDetectThresholdMul + 0.20,
+            microRampThresholdMul =  cfg.microRampThresholdMul + 0.15,
+            mealConfidenceSpeedMul = cfg.mealConfidenceSpeedMul - 0.15
         )
 
         "SLOW" -> cfg.copy(
@@ -370,9 +372,9 @@ private fun applyMealDetectSpeed(
             mealDeltaMin = cfg.mealDeltaMin + 0.20,
             mealUncertainConfidence = (cfg.mealUncertainConfidence + 0.10).coerceIn(0.0, 1.0),
             mealConfirmConfidence = (cfg.mealConfirmConfidence + 0.05).coerceIn(0.0, 1.0),
-            mealDetectThresholdMul = 1.10,
-            microRampThresholdMul = 1.08,
-            mealConfidenceSpeedMul = 0.92
+            mealDetectThresholdMul = cfg.mealDetectThresholdMul + 0.10,
+            microRampThresholdMul = cfg.microRampThresholdMul + 0.08,
+            mealConfidenceSpeedMul = cfg.mealConfidenceSpeedMul - 0.08
         )
 
         "FAST" -> cfg.copy(
@@ -381,9 +383,9 @@ private fun applyMealDetectSpeed(
             mealDeltaMin = (cfg.mealDeltaMin - 0.20).coerceAtLeast(0.3),
             mealUncertainConfidence = (cfg.mealUncertainConfidence - 0.05).coerceIn(0.0, 1.0),
             mealConfirmConfidence = (cfg.mealConfirmConfidence - 0.10).coerceIn(0.0, 1.0),
-            mealDetectThresholdMul = 0.90,
-            microRampThresholdMul = 0.92,
-            mealConfidenceSpeedMul = 1.10
+            mealDetectThresholdMul = cfg.mealDetectThresholdMul - 0.10,
+            microRampThresholdMul = cfg.microRampThresholdMul  - 0.08,
+            mealConfidenceSpeedMul = cfg.mealConfidenceSpeedMul + 0.10
         )
 
         "VERY_FAST" -> cfg.copy(
@@ -392,9 +394,9 @@ private fun applyMealDetectSpeed(
             mealDeltaMin = (cfg.mealDeltaMin - 0.35).coerceAtLeast(0.25),
             mealUncertainConfidence = (cfg.mealUncertainConfidence - 0.15).coerceIn(0.0, 1.0),
             mealConfirmConfidence = (cfg.mealConfirmConfidence - 0.20).coerceIn(0.0, 1.0),
-            mealDetectThresholdMul = 0.80,
-            microRampThresholdMul = 0.85,
-            mealConfidenceSpeedMul = 1.25
+            mealDetectThresholdMul = cfg.mealDetectThresholdMul - 0.20,
+            microRampThresholdMul = cfg.microRampThresholdMul - 0.15,
+            mealConfidenceSpeedMul = cfg.mealConfidenceSpeedMul + 0.25
         )
 
         else -> cfg // MODERATE
@@ -417,7 +419,7 @@ private fun applyCorrectionStyle(
             correctionHoldSlopeMax = cfg.correctionHoldSlopeMax + 0.15,
             correctionHoldAccelMax = cfg.correctionHoldAccelMax + 0.05,
             correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 0.60,
-            persistentAggressionMul = 0.70
+            persistentAggressionMul = cfg.persistentAggressionMul - 0.30
         )
 
         "CAUTIOUS" -> cfg.copy(
@@ -426,7 +428,7 @@ private fun applyCorrectionStyle(
             correctionHoldSlopeMax = cfg.correctionHoldSlopeMax + 0.10,
             correctionHoldAccelMax = cfg.correctionHoldAccelMax + 0.03,
             correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 0.70,
-            persistentAggressionMul = 0.85
+            persistentAggressionMul = cfg.persistentAggressionMul - 0.15
         )
 
         "PERSISTENT" -> cfg.copy(
@@ -435,7 +437,7 @@ private fun applyCorrectionStyle(
             correctionHoldSlopeMax = cfg.correctionHoldSlopeMax - 0.10,
             correctionHoldAccelMax = cfg.correctionHoldAccelMax - 0.03,
             correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 1.30,
-            persistentAggressionMul = 1.20
+            persistentAggressionMul = cfg.persistentAggressionMul + 0.20
         )
 
         "VERY_PERSISTENT" -> cfg.copy(
@@ -444,7 +446,7 @@ private fun applyCorrectionStyle(
             correctionHoldSlopeMax = cfg.correctionHoldSlopeMax - 0.15,
             correctionHoldAccelMax = cfg.correctionHoldAccelMax - 0.05,
             correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 1.50,
-            persistentAggressionMul = 1.40
+            persistentAggressionMul = cfg.persistentAggressionMul + 0.40
 
         )
 
