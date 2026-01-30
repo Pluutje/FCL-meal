@@ -130,19 +130,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
     aapsLogger, rh
 ), APS, PluginConstraints {
 
- /*   class AdaptiveInfoPreference(
-        ctx: Context,
-        @StringRes titleRes: Int,
-        @StringRes summaryRes: Int
-    ) : androidx.preference.Preference(ctx) {
 
-        init {
-            title = ctx.getString(titleRes)
-            summary = ctx.getString(summaryRes)
-            isSelectable = false
-            isEnabled = false
-        }
-    }   */
  class AdaptiveInfoPreference(
      ctx: Context,
      @StringRes titleRes: Int,
@@ -162,19 +150,14 @@ open class OpenAPSFCLPlugin @Inject constructor(
  }
 
 
-
-
     // last values
     override var lastAPSRun: Long = 0
     override val algorithm = APSResult.Algorithm.SMB
-   // override var lastAPSResult: DetermineBasalResult? = null
-    override var lastAPSResult: APSResult? = null
-//    override fun supportsDynamicIsf(): Boolean = preferences.get(BooleanKey.ApsUseDynamicSensitivity)
 
+    override var lastAPSResult: APSResult? = null
 
     override fun getGlucoseStatusData(allowOldData: Boolean): GlucoseStatus? =
         glucoseStatusCalculatorFCL.getGlucoseStatusData(allowOldData)
-
 
     override fun specialEnableCondition(): Boolean {
         return try {

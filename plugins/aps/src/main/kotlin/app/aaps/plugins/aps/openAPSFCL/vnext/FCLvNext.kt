@@ -119,9 +119,16 @@ private fun classifyTrendState(ctx: FCLvNextContext, config: FCLvNextConfig): Tr
     val weakSlopeMin = 0.45
     val weakAccelMin = 0.10
 
-    val confSlopeMin = 0.95
+//    val confSlopeMin = 0.95
+//    val confAccelMin = 0.18
+//    val confDeltaMin = 1.8
+
+    val (confSlopeMin, confDeltaMin) = when (config.profielNaam) {
+        "AGGRESSIVE", "VERY_AGGRESSIVE" -> 0.65 to 1.2
+        else -> 0.95 to 1.8
+    }
     val confAccelMin = 0.18
-    val confDeltaMin = 1.8
+
 
     val slope = ctx.slope
     val accel = ctx.acceleration
@@ -228,7 +235,7 @@ private fun computeBgZone(ctx: FCLvNextContext): BgZone {
         else -> BgZone.EXTREME                                  // zeer hoog
     }
 }
-
+/*
 private fun computeDoseAccessLevel(
     ctx: FCLvNextContext,
     bgZone: BgZone
@@ -252,6 +259,43 @@ private fun computeDoseAccessLevel(
                 DoseAccessLevel.SMALL
             else ->
                 DoseAccessLevel.NORMAL
+        }
+
+        BgZone.HIGH ->
+            DoseAccessLevel.NORMAL
+
+        BgZone.EXTREME ->
+            DoseAccessLevel.NORMAL
+    }
+}   */
+
+// NIEUW:
+private fun computeDoseAccessLevel(
+    ctx: FCLvNextContext,
+    bgZone: BgZone
+): DoseAccessLevel {
+
+    return when (bgZone) {
+
+        BgZone.LOW ->
+            DoseAccessLevel.BLOCKED
+
+        BgZone.IN_RANGE -> when {
+            // Gebruik recent slope voor snelle detectie
+            maxOf(ctx.slope, ctx.recentSlope * 0.3) >= 0.6 && ctx.acceleration >= 0.10 ->
+                DoseAccessLevel.MICRO_ONLY
+            else ->
+                DoseAccessLevel.BLOCKED
+        }
+
+        BgZone.MID -> {
+            // Combineer lange-termijn en recente slope
+            val effectiveSlope = maxOf(ctx.slope, ctx.recentSlope * 0.3)
+            when {
+                effectiveSlope < 0.5 -> DoseAccessLevel.MICRO_ONLY
+                effectiveSlope < 0.9 -> DoseAccessLevel.SMALL
+                else -> DoseAccessLevel.NORMAL
+            }
         }
 
         BgZone.HIGH ->
@@ -805,11 +849,27 @@ private fun detectMealSignal(ctx: FCLvNextContext, config: FCLvNextConfig): Meal
     val reason = "MealSignal=$state conf=${"%.2f".format(confidence)}"
     return MealSignal(state, confidence, reason)
 }
-
+/*
 private fun canCommitNow(now: DateTime, config: FCLvNextConfig): Boolean {
     val last = lastCommitAt ?: return true
     val minutes = org.joda.time.Minutes.minutesBetween(last, now).minutes
     return minutes >= config.commitCooldownMinutes
+}   */
+
+// NIEUW:
+private fun canCommitNow(now: DateTime, ctx: FCLvNextContext, config: FCLvNextConfig): Boolean {
+    val last = lastCommitAt ?: return true
+    val minutes = org.joda.time.Minutes.minutesBetween(last, now).minutes
+    val baseCooldown = config.commitCooldownMinutes
+
+    // Dynamische cooldown: sneller bij hoge delta
+    val effectiveCooldown = when {
+        ctx.deltaToTarget >= 4.0 -> baseCooldown / 2  // 7.5 minuten bij zeer hoge delta
+        ctx.deltaToTarget >= 3.0 -> (baseCooldown * 0.75).toInt()  // 11 minuten bij hoge delta
+        else -> baseCooldown
+    }
+
+    return minutes >= effectiveCooldown
 }
 
 private fun commitFractionZoneFactor(bgZone: BgZone): Double {
@@ -1326,6 +1386,12 @@ private fun computeEarlyDoseDecision(
         MealState.NONE -> 0.0
     }
 
+    val fastRiseBonus = when {
+        ctx.recentSlope >= 10.0 -> 0.30  // Zeer snelle stijging
+        ctx.recentSlope >= 5.0 -> 0.15   // Snelle stijging
+        else -> 0.0
+    }
+
     var conf =
         0.32 * slopeScore +
             0.30 * accelScore +
@@ -1333,7 +1399,8 @@ private fun computeEarlyDoseDecision(
             0.10 * consistScore +
             0.10 * iobRoom +
             watchingBonus +
-            mealBonus
+            mealBonus +
+            fastRiseBonus
 
     val peakEscalation =
         if (peak.predictedPeak >= 12.5 &&
@@ -1355,7 +1422,17 @@ private fun computeEarlyDoseDecision(
         if (ctx.acceleration >= 0.35 && ctx.iobRatio <= 0.25) 0.75 else 1.0
 
 // profiel beïnvloedt alleen timing (threshold)
-    var dynamicStage1Min = (baseStage1Min * fastCarbStage1Mul * config.earlyStage1ThresholdMul).coerceIn(0.12, 0.45)
+    val slopeBasedStage1Min = when {
+        ctx.recentSlope >= 8.0 -> 0.15  // Snellere stage1 bij zeer snelle stijging
+        ctx.recentSlope >= 5.0 -> 0.22  // Versnelde stage1 bij snelle stijging
+        else -> baseStage1Min
+    }
+
+    var dynamicStage1Min = (slopeBasedStage1Min * fastCarbStage1Mul * config.earlyStage1ThresholdMul)
+        .coerceIn(0.12, 0.45)
+
+
+//    var dynamicStage1Min = (baseStage1Min * fastCarbStage1Mul * config.earlyStage1ThresholdMul).coerceIn(0.12, 0.45)
 
     // 🔹 EXTREME-zone: stage-1 iets eerder toestaan
     if (
@@ -1423,7 +1500,7 @@ private fun computeEarlyDoseDecision(
 
     val minEarlyU =
         (config.maxSMB * minEarlyFrac)
-            .coerceIn(0.10, config.maxSMB * 0.35)   // absolute safety rails
+            .coerceIn(0.20, config.maxSMB * 0.40)
 
 
     val targetU =
@@ -1817,6 +1894,54 @@ private fun isReentrySignal(
 
     return reliable && aboveTarget && rising && accelerating
 }
+
+
+private fun heightEscalationFactor(
+    ctx: FCLvNextContext,
+    peak: PeakEstimate,
+    mealSignal: MealSignal,
+    config: FCLvNextConfig
+): Double {
+
+    // Alleen vóór de piek, anders nooit harder
+    if (peak.state == PeakPredictionState.CONFIRMED) return 1.0
+
+    // Geen meal-achtig gedrag → niets doen
+    if (mealSignal.state == MealState.NONE && peak.predictedPeak < 11.0) return 1.0
+
+    // ── Normalisaties (alles 0..1) ──
+    val slopeScore =
+        smooth01((ctx.slope - 0.35) / (1.4 - 0.35))
+
+    val accelScore =
+        smooth01((ctx.acceleration - 0.05) / (0.35 - 0.05))
+
+    val deltaScore =
+        smooth01((ctx.deltaToTarget - 0.8) / (3.5 - 0.8))
+
+    val consistencyScore =
+        smooth01((ctx.consistency - 0.45) / (0.80 - 0.45))
+
+    val peakPressure =
+        smooth01((peak.predictedPeak - 11.0) / (17.0 - 11.0))
+
+    // ── Combineer tot “meal momentum” ──
+    val momentum =
+        0.30 * slopeScore +
+            0.30 * accelScore +
+            0.20 * deltaScore +
+            0.20 * consistencyScore
+
+    // ── Escalatie: basis + extra druk van verwachte piek ──
+    val baseBoost = lerp(1.0, 1.35, momentum)
+    val peakBoost = lerp(1.0, 1.30, peakPressure)
+
+    val factor = baseBoost * peakBoost
+
+    // Veilig clampen
+    return factor.coerceIn(1.0, 1.70)
+}
+
 
 
 class FCLvNext(
@@ -2220,8 +2345,13 @@ class FCLvNext(
             now = now,
             config = config
         )
-
         status.append(early.reason + "\n")
+
+        // Forceer early stage bij zeer snelle stijging
+        if (ctx.recentSlope >= 8.0 && earlyDose.stage == 0) {
+            earlyDose.stage = 1  // Forceer naar stage1
+            status.append("EARLY FORCED to stage1 (recentSlope=${"%.1f".format(ctx.recentSlope)})\n")
+        }
 
 // candidate stage (zodat micro-hold early niet per ongeluk blokkeert)
         val earlyStageCandidate = maxOf(earlyDose.stage, early.stageToFire)
@@ -2305,7 +2435,15 @@ class FCLvNext(
             finalDose = 0.0
         } else {
          //   val zoneEnum = computeBgZone(ctx)
-            val trajFactor = trajectoryDampingFactor(ctx, mealSignal, zoneEnum, config)
+            val fastLaneDip = (ctx.recentDelta5m <= -0.06 || ctx.recentSlope <= -0.20)
+            val trajFactor =
+                if (earlyStageCandidate > 0 && !fastLaneDip) {
+                    status.append("Trajectory BYPASS (earlyStage=$earlyStageCandidate)\n")
+                    1.0
+                } else {
+                    trajectoryDampingFactor(ctx, mealSignal, zoneEnum, config)
+                }
+
             val before = finalDose
             finalDose *= trajFactor
             status.append(
@@ -2348,6 +2486,22 @@ class FCLvNext(
         } else if (early.active && early.targetU > 0.0 && ctx.acceleration < 0.0) {
             status.append("EARLY FLOOR skipped (accel<0)\n")
         }
+
+        // ─────────────────────────────────────────────
+        // 🟥 HEIGHT ESCALATION (single, smooth factor)
+        // ─────────────────────────────────────────────
+        val heightFactor =
+            heightEscalationFactor(ctx, peak, mealSignal, config)
+
+        if (heightFactor > 1.0) {
+            val before = finalDose
+            finalDose *= heightFactor
+            status.append(
+                "HEIGHT ESCALATION: ×${"%.2f".format(heightFactor)} " +
+                    "${"%.2f".format(before)}→${"%.2f".format(finalDose)}U\n"
+            )
+        }
+
 
         // ─────────────────────────────────────────────
        // 🟦 PERSISTENT CORRECTION LOOP (dag + nacht)
@@ -2462,7 +2616,8 @@ class FCLvNext(
 // 9️⃣ Meal detectie & commit/observe + peak suppression + re-entry
 // ─────────────────────────────────────────────
 
-        val commitAllowed = canCommitNow(now, config)
+     //   val commitAllowed = canCommitNow(now, config)
+        val commitAllowed = canCommitNow(now, ctx, config)
 
 // ─────────────────────────────────────────────
 // 🧠 LEARNING: commit fraction (single source)
@@ -2612,7 +2767,16 @@ class FCLvNext(
                     else
                         maxOf(finalDose, commitDose)
 
-                if (committedDose >= config.minCommitDose) {
+                val effectiveMinCommitDose = when {
+                    ctx.deltaToTarget >= 3.0 && ctx.iobRatio < 0.3 ->
+                        config.minCommitDose * 0.7  // 0.21U i.p.v. 0.30U
+                    else ->
+                        config.minCommitDose
+                }
+
+                if (committedDose >= effectiveMinCommitDose) {
+
+             //   if (committedDose >= config.minCommitDose) {
 
                     commandedDose = committedDose
 

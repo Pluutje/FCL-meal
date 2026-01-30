@@ -249,7 +249,7 @@ fun loadFCLvNextConfig(
 
         mealDetectThresholdMul = 1.0,
         microRampThresholdMul = 1.0,
-        mealConfidenceSpeedMul = 1.1,
+        mealConfidenceSpeedMul = 1.2,
 
 
 
@@ -352,6 +352,7 @@ private fun applyProfileDoseStrength(
 private fun applyMealDetectSpeed(
     cfg: FCLvNextConfig
 ): FCLvNextConfig {
+
 
     return when (cfg.mealDetectSpeed) {
 

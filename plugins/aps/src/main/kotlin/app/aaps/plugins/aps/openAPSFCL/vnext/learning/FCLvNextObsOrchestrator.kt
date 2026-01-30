@@ -30,7 +30,8 @@ class FCLvNextObsOrchestrator(
     private var lastSnapshot: FCLvNextObsSnapshot? = null
     private var lastDeliveryConfidence: Double = 1.0
     private var learningStore: FCLvNextObsLearningStore? = null
-    private var lastFinishedEpisode: Episode? = null
+//    private var lastFinishedEpisode: Episode? = null
+    private val finishedEpisodes: ArrayDeque<Episode> = ArrayDeque()
 
     private var lastDeliveryGateStatus: DeliveryGateStatus? = null
     private val deliveryGate = FCLvNextObsInsulinDeliveryGate()
@@ -82,7 +83,7 @@ class FCLvNextObsOrchestrator(
             )
 
 
-        rebuildSnapshot(now)
+
 
         // ─────────────────────────────────────────────
 // Bolus hook -> forceMealConfirm
@@ -100,26 +101,21 @@ class FCLvNextObsOrchestrator(
             now = now,
             isNight = isNight,
 
-            peakActive = peakActive,
-            mealSignalActive = mealSignalActive,
-            prePeakCommitWindow = prePeakCommitWindow,
-
-            rescueConfirmed = rescueConfirmed,
-            downtrendLocked = downtrendLocked,
-
-            forceMealConfirm = forceMealConfirm,
-            manualBolusDetected = manualBolusDetected,
+        //    rescueConfirmed = rescueConfirmed,
+        //    downtrendLocked = downtrendLocked,
+        //    manualBolusDetected = manualBolusDetected,
 
             bgMmol = bgMmol,
-            targetMmol = targetMmol,
             currentIob = currentIob,
 
-            slope = slope,
-            acceleration = acceleration,
-            deltaToTarget = deltaToTarget,
+            commandedU = commandedU,
+            maxBolusU = maxBolusU,
+
             consistency = consistency
         )
 
+
+        rebuildSnapshot(now)
 
 
         // Alleen iets doen bij einde van episode
@@ -127,7 +123,23 @@ class FCLvNextObsOrchestrator(
 
         val episode = event.episode
 
-        lastFinishedEpisode = episode
+        val endReason =
+            when {
+                episode.excluded && episode.exclusionReason != null ->
+                    "Gestopt: ${episode.exclusionReason}"
+
+                episode.endTime != null ->
+                    "Gestopt: insuline-effect voorbij"
+
+                else ->
+                    null
+            }
+
+
+        finishedEpisodes.addFirst(episode)
+        while (finishedEpisodes.size > MAX_STORED_EPISODES) {
+            finishedEpisodes.removeLast()
+        }
 
         // Excluded episodes tellen niet mee voor learning
         if (episode.excluded) return null
@@ -213,7 +225,18 @@ class FCLvNextObsOrchestrator(
             else
                 SnapshotStatus.OBSERVING
 
-        val last = lastFinishedEpisode
+        val last = finishedEpisodes.firstOrNull()
+
+        val lastEndReason =
+            when {
+                last?.excluded == true && last.exclusionReason != null ->
+                    "Gestopt: ${last.exclusionReason}"
+
+                last?.endTime != null ->
+                    "Gestopt: insuline-effect voorbij"
+
+                else -> null
+            }
 
         lastSnapshot =
             FCLvNextObsSnapshot(
@@ -224,10 +247,16 @@ class FCLvNextObsOrchestrator(
                 deliveryConfidence = lastDeliveryConfidence,
                 status = snapshotStatus,
                 axes = axisSnapshots,
+
+                recentEpisodes = finishedEpisodes.toList(),
+
                 lastEpisodeStart = last?.startTime,
                 lastEpisodeEnd = last?.endTime,
+                lastEpisodeEndReason = lastEndReason,
+
                 deliveryGateStatus = lastDeliveryGateStatus
             )
+
     }
 
 
@@ -237,13 +266,15 @@ class FCLvNextObsOrchestrator(
         this.learningStore = store
     }
 
-    fun getLastFinishedEpisode(): Episode? = lastFinishedEpisode
+    fun getLastFinishedEpisode(): Episode? = finishedEpisodes.firstOrNull()
+    fun getRecentFinishedEpisodes(): List<Episode> = finishedEpisodes.toList()
 
     companion object {
         // bv. 0.20 = start episode als commandedU >= 20% van maxBolus
-        private const val BOLUS_TRIGGER_PCT = 0.30
+        private const val BOLUS_TRIGGER_PCT = 0.2
         // safety: als maxBolus heel klein is, wil je niet op 0.01U triggeren
-        private const val MIN_TRIGGER_U = 0.20
+        private const val MIN_TRIGGER_U = 0.15
+        private const val MAX_STORED_EPISODES = 7
     }
 
 

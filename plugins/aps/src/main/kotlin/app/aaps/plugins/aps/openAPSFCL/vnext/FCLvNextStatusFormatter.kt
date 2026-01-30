@@ -5,6 +5,7 @@ import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.StringKey
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.*
 
+private const val UI_EPISODES_TO_SHOW = 5
 
 class FCLvNextStatusFormatter(private val prefs: Preferences) {
 
@@ -251,6 +252,31 @@ ${gate.reason?.let { "• Opmerking   : $it" } ?: ""}
 """.trimIndent()
     }
 
+    private fun formatEpisodes(
+        episodes: List<Episode>,
+        now: DateTime
+    ): String {
+        if (episodes.isEmpty()) return "Geen afgeronde episodes"
+
+        return episodes
+            .take(UI_EPISODES_TO_SHOW)
+            .joinToString("\n") { ep ->
+                val end = ep.endTime ?: now
+                val mins = (end.millis - ep.startTime.millis) / 60000
+
+                val reason =
+                    when {
+                        ep.excluded && ep.exclusionReason != null ->
+                            " ⛔ ${ep.exclusionReason}"
+
+                        else ->
+                            " ✓ afgerond"
+                    }
+
+                "• ${ep.startTime.toString("HH:mm")} → ${end.toString("HH:mm")} (${mins} min)$reason"
+            }
+    }
+
 
 
     private fun buildLearningSnapshotBlock(
@@ -276,12 +302,11 @@ Nog geen observaties beschikbaar
         sb.append("• Laatste check : ${snapshot.createdAt.toString("HH:mm:ss")}\n")
 
         // ── EPISODE STATUS ──────────────────────
-        sb.append("\n🧩 EPISODE\n")
+        sb.append("\n🧩 ACTIEVE EPISODE\n")
         sb.append("─────────────────────\n")
 
         if (snapshot.activeEpisode && snapshot.activeEpisodeStartedAt != null) {
-            val mins =
-                minutesBetween(snapshot.activeEpisodeStartedAt, DateTime.now())
+            val mins = minutesBetween(snapshot.activeEpisodeStartedAt, snapshot.createdAt)
 
             sb.append("• Status        : 🟢 ACTIEF\n")
             sb.append("• Gestart       : ${snapshot.activeEpisodeStartedAt.toString("HH:mm")}\n")
@@ -291,17 +316,15 @@ Nog geen observaties beschikbaar
             sb.append("• Status        : ⚪ Geen actieve episode\n")
         }
 
-        if (snapshot.lastEpisodeStart != null && snapshot.lastEpisodeEnd != null) {
-            val mins =
-                minutesBetween(snapshot.lastEpisodeStart, snapshot.lastEpisodeEnd)
-
-            sb.append(
-                "\n• Laatste episode : " +
-                    "${snapshot.lastEpisodeStart.toString("HH:mm")} → " +
-                    "${snapshot.lastEpisodeEnd.toString("HH:mm")} " +
-                    "(${mins} min)\n"
+        sb.append("\n🧾 Laatste episodes\n")
+        sb.append("─────────────────────\n")
+        sb.append(
+            formatEpisodes(
+                snapshot.recentEpisodes,
+                snapshot.createdAt
             )
-        }
+        ).append("\n")
+
 
         // ── AXES ────────────────────────────────
         snapshot.axes.forEach { axis ->
@@ -414,7 +437,7 @@ ${metricsText ?: "Nog geen data"}
 
         return """
 ════════════════════════
- 🧠 FCL vNext V3 v1.7.0
+ 🧠 FCL vNext V3 v1.8.6
 ════════════════════════
 • Profiel              : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}
 • Meal detect          : ${mealDetectLabel(prefs.get(StringKey.fcl_vnext_meal_detect_speed))}

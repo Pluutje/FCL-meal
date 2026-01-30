@@ -62,9 +62,6 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsLearningStore
 
 @Singleton
 
-
-
-
 class DetermineBasalFCL @Inject constructor(
     private val profileUtil: ProfileUtil,
     private val fabricPrivacy: FabricPrivacy,
@@ -74,7 +71,6 @@ class DetermineBasalFCL @Inject constructor(
     private val context: Context,
 
 ) {
-
 
     private val fclMetrics = FCLMetrics(context = context,preferences = preferences,persistenceLayer = persistenceLayer)
     private val fclActivityModule = FCLActivityModule(preferences = preferences,persistenceLayer = persistenceLayer,context = context)
@@ -209,29 +205,21 @@ class DetermineBasalFCL @Inject constructor(
             consoleError = consoleError
         )
 
-
+        var ci: Double
+        val cid: Double
         val iobArray = iob_data_array
         val iob_data = iobArray[0]
 
-
-
         // TODO eliminate
         val deliverAt = currentTime
-
-        // TODO eliminate
+        val systemTime = currentTime
         val profile_current_basal = round_basal(profile.current_basal)
         var basal = profile_current_basal
-
-        // TODO eliminate
-        val systemTime = currentTime
-
-        // TODO eliminate
         val bgTime = glucose_status.date
         val minAgo = round((systemTime - bgTime) / 60.0 / 1000.0, 1)
-        // TODO eliminate
         val bg = glucose_status.glucose
-        // TODO eliminate
         val noise = glucose_status.noise
+
         // 38 is an xDrip error state that usually indicates sensor failure
         // all other BG values between 11 and 37 mg/dL reflect non-error-code BG values, so we should zero temp for those
         if (bg <= 10 || bg == 38.0 || noise >= 3) {  //Dexcom is in ??? mode or calibrating, or xDrip reports high noise
@@ -418,8 +406,6 @@ class DetermineBasalFCL @Inject constructor(
             }
 
 
-
-
 // 1) Log elke cycle (lichtgewicht)
             fclMetrics.onFiveMinuteTick(
                 currentBG = bgNowMmol,          // ✅ mmol/L (zeker correct)
@@ -508,14 +494,9 @@ class DetermineBasalFCL @Inject constructor(
             consoleError.add("\n")
 
 
-
-
-
-
         } else {
             consoleError.add("FCLvNext skipped: Need more BG data ${bgHistoryPoints.size}/10")
         }
-
 
 
 // fun recordCycle
@@ -630,8 +611,7 @@ class DetermineBasalFCL @Inject constructor(
         val enableUAM = profile.enableUAM
 
         // carb impact and duration are 0 unless changed below
-        var ci: Double
-        val cid: Double
+
         // calculate current carb absorption rate, and how long to absorb all carbs
         // CI = current carb impact on BG in mg/dL/5m
         ci = round((minDelta - bgi), 1)
