@@ -443,6 +443,7 @@ object FCLvNextCsvLogger {
                 absorptionActive,
                 reentrySignal,
                 decisionReason.replace(SEP, ","),
+                heightIntent,
 
                 // rescue
                 bg1(pred60),
@@ -455,7 +456,7 @@ object FCLvNextCsvLogger {
                 correctionStyle,
                 doseDistributionStyle,
 
-                heightIntent,
+
 
                 // execution
                 u2(finalDose),

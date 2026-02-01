@@ -29,7 +29,7 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="@dimen/overview_action_button_height"
         android:orientation="horizontal"
         android:paddingStart="@dimen/gray_material_button_margin_horizontal"
         android:paddingEnd="@dimen/gray_material_button_margin_horizontal">
@@ -38,7 +38,7 @@
             android:id="@+id/treatment_button"
             style="@style/ButtonSmallFontStyle"
             android:layout_width="0px"
-            android:layout_height="fill_parent"
+            android:layout_height="match_parent"
             android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
             android:layout_weight="0.5"
             android:drawableTop="@drawable/icon_insulin_carbs"
@@ -53,7 +53,7 @@
             android:id="@+id/insulin_button"
             style="@style/ButtonSmallFontStyle"
             android:layout_width="0px"
-            android:layout_height="fill_parent"
+            android:layout_height="match_parent"
             android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
             android:layout_weight="0.5"
             android:drawableTop="@drawable/ic_bolus"
@@ -67,7 +67,7 @@
             android:id="@+id/carbs_button"
             style="@style/ButtonSmallFontStyle"
             android:layout_width="0px"
-            android:layout_height="fill_parent"
+            android:layout_height="match_parent"
             android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
             android:layout_weight="0.5"
             android:drawableTop="@drawable/ic_cp_bolus_carbs"
@@ -78,10 +78,26 @@
             app:iconPadding="-4dp" />
 
         <app.aaps.core.ui.elements.SingleClickButton
+            android:id="@+id/meal_intent_button"
+            style="@style/ButtonSmallFontStyle"
+            android:layout_width="0px"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
+            android:layout_weight="0.5"
+            android:drawableTop="@drawable/ic_meal"
+            android:ellipsize="end"
+            android:singleLine="true"
+            android:text="@string/meal_intent"
+            android:textColor="#00897B"
+            android:visibility="gone"
+            app:iconPadding="-4dp" />
+
+
+        <app.aaps.core.ui.elements.SingleClickButton
             android:id="@+id/wizard_button"
             style="@style/ButtonSmallFontStyle"
             android:layout_width="0px"
-            android:layout_height="fill_parent"
+            android:layout_height="match_parent"
             android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
             android:layout_weight="0.5"
             android:drawableTop="@drawable/ic_calculator"
@@ -95,7 +111,7 @@
             android:id="@+id/calibration_button"
             style="@style/ButtonSmallFontStyle"
             android:layout_width="0px"
-            android:layout_height="fill_parent"
+            android:layout_height="match_parent"
             android:layout_marginStart="@dimen/gray_material_button_margin_horizontal"
             android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
             android:layout_weight="0.5"
@@ -111,7 +127,7 @@
             android:id="@+id/cgm_button"
             style="@style/ButtonSmallFontStyle"
             android:layout_width="0px"
-            android:layout_height="fill_parent"
+            android:layout_height="match_parent"
             android:layout_marginStart="@dimen/gray_material_button_margin_horizontal"
             android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
             android:layout_weight="0.5"
@@ -127,7 +143,7 @@
             android:id="@+id/quick_wizard_button"
             style="@style/ButtonSmallFontStyle"
             android:layout_width="0px"
-            android:layout_height="fill_parent"
+            android:layout_height="match_parent"
             android:layout_marginStart="@dimen/gray_material_button_margin_horizontal"
             android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
             android:layout_weight="0.5"

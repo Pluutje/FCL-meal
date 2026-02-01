@@ -12,7 +12,7 @@ import kotlin.math.min
  * - During cooldown: shouldDeliver=false (cooperative with AAPS), but we keep control.
  */
 class PersistentCorrectionController(
-    private val cooldownCycles: Int = 3,              // jij: 2 of 3
+    private val cooldownCycles: Int = 2,              // jij: 2 of 3
     private val maxBolusFraction: Double = 0.30,     // jij: ~30%
 
 ) {

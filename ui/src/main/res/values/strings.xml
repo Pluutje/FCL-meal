@@ -181,4 +181,20 @@
         <item>Negative only</item>
     </string-array>
 
+    <!--    Eigen-->
+    <string name="meal_intent_title">Meal intent</string>
+    <string name="meal_intent_description">
+    Geef aan wat je verwacht te gaan eten.
+    Dit dient geen bolus toe, maar helpt het algoritme eerder reageren.
+</string>
+
+    <string name="meal_intent_small">Klein</string>
+    <string name="meal_intent_normal">Normaal</string>
+    <string name="meal_intent_large">Groot</string>
+
+    <string name="meal_intent_confirm">
+    Meal intent: %1$s\nGeldig voor circa 2 uur.
+</string>
+
+
 </resources>

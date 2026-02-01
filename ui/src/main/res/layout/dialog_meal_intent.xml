@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/StyleDialog"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Header -->
+        <RelativeLayout
+            style="@style/StyleDialogHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <ImageView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:importantForAccessibility="no"
+                app:srcCompat="@drawable/ic_meal" />
+
+            <TextView
+                android:id="@+id/header_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_centerInParent="true"
+                android:text="@string/meal_intent_title"
+                android:textAlignment="center"
+                android:textAppearance="?android:attr/textAppearanceLarge" />
+        </RelativeLayout>
+
+        <!-- Content -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="12dp"
+            android:text="@string/meal_intent_description" />
+
+        <RadioGroup
+            android:id="@+id/meal_size_group"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="12dp">
+
+            <RadioButton
+                android:id="@+id/meal_small"
+                style="@style/Widget.App.RadioButton"
+                android:text="@string/meal_intent_small" />
+
+            <RadioButton
+                android:id="@+id/meal_normal"
+                style="@style/Widget.App.RadioButton"
+                android:checked="true"
+                android:text="@string/meal_intent_normal" />
+
+            <RadioButton
+                android:id="@+id/meal_large"
+                style="@style/Widget.App.RadioButton"
+                android:text="@string/meal_intent_large" />
+        </RadioGroup>
+
+        <include
+            android:id="@+id/okcancel"
+            layout="@layout/okcancel" />
+
+    </LinearLayout>
+</ScrollView>

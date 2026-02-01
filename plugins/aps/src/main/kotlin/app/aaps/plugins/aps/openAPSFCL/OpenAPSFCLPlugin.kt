@@ -479,7 +479,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
         // =================================================
         val GENERAL = preferenceManager.createPreferenceScreen(context).apply {
             key = "FCLvNextGeneral"
-            title = "⚙️ Algemeen gedrag"
+            title = "⚙️ Gedrag & veiligheid"
             initialExpandedChildrenCount = Int.MAX_VALUE
 
             addPreference(
@@ -545,7 +545,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
         // =================================================
         val PROFILES = preferenceManager.createPreferenceScreen(context).apply {
             key = "FCLvNextProfiles"
-            title = "🧬 Profiel"
+            title = "🧬 Profiel instellingen"
             initialExpandedChildrenCount = Int.MAX_VALUE
 
             addPreference(

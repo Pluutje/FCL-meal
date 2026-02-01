@@ -693,4 +693,6 @@
 
     <string name="openaps_fcl">FCL v3</string>
     <string name="fcl_shortname">FCL V3</string>
+
+    <string name="uel_meal_intent">Meal intent</string>
 </resources>

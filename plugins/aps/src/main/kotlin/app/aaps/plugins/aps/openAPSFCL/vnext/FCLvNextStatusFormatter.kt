@@ -437,7 +437,7 @@ ${metricsText ?: "Nog geen data"}
 
         return """
 ════════════════════════
- 🧠 FCL vNext V3 v1.8.6
+ 🧠 FCL knop V1 v1.0.0
 ════════════════════════
 • Profiel              : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}
 • Meal detect          : ${mealDetectLabel(prefs.get(StringKey.fcl_vnext_meal_detect_speed))}

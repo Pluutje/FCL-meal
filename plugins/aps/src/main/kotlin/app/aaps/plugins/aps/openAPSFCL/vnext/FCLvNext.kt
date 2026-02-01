@@ -119,9 +119,6 @@ private fun classifyTrendState(ctx: FCLvNextContext, config: FCLvNextConfig): Tr
     val weakSlopeMin = 0.45
     val weakAccelMin = 0.10
 
-//    val confSlopeMin = 0.95
-//    val confAccelMin = 0.18
-//    val confDeltaMin = 1.8
 
     val (confSlopeMin, confDeltaMin) = when (config.profielNaam) {
         "AGGRESSIVE", "VERY_AGGRESSIVE" -> 0.65 to 1.2
@@ -290,7 +287,7 @@ private fun computeDoseAccessLevel(
 
         BgZone.MID -> {
             // Combineer lange-termijn en recente slope
-            val effectiveSlope = maxOf(ctx.slope, ctx.recentSlope * 0.3)
+            val effectiveSlope = maxOf(ctx.slope, ctx.recentSlope * 0.7)
             when {
                 effectiveSlope < 0.5 -> DoseAccessLevel.MICRO_ONLY
                 effectiveSlope < 0.9 -> DoseAccessLevel.SMALL
@@ -507,13 +504,17 @@ private fun decide(ctx: FCLvNextContext): DecisionResult {
     }
 
     // === LAYER B — SOFT ALLOW ===
-    val nightFactor = 1.0 //if (ctx.input.isNight) 0.7 else 1.0
-    val consistencyFactor = ctx.consistency.coerceIn(0.3, 1.0)
+
+    val consistencyFactor =
+        if (ctx.slope >= 0.6 && ctx.acceleration >= 0.15)
+            1.0
+        else
+            ctx.consistency.coerceIn(0.3, 1.0)
 
     return DecisionResult(
         allowed = true,
         force = false,
-        dampening = nightFactor * consistencyFactor,
+        dampening = consistencyFactor,
         reason = "Soft allow"
     )
 }
@@ -528,7 +529,7 @@ private fun updatePeakEstimate(
     // ── episode start condities (flexibel, maar bewust niet te streng) ──
     val episodeShouldBeActive =
         mealSignal.state != MealState.NONE ||
-            ( ctx.consistency >= 0.45 &&
+            ( ctx.consistency >= config.episodeMinConsistency &&
                     ( ctx.deltaToTarget >= 0.6 ||
                             (ctx.acceleration >= 0.12 && ctx.slope >= 0.15)
                         )
@@ -556,7 +557,7 @@ private fun updatePeakEstimate(
     // ── episode exit (niet te snel!) ──
     if (peakEstimator.active && !episodeShouldBeActive) {
         // exit pas als we echt “uit de meal dynamiek” zijn:
-        val fallingClearly = ctx.slope <= -0.6 && ctx.consistency >= 0.55
+        val fallingClearly = ctx.slope <= -0.6 && ctx.consistency >= config.episodeMinConsistency
         val lowDelta = ctx.deltaToTarget < 0.2 && ctx.acceleration <= 0.0
         if (fallingClearly || lowDelta) {
             peakEstimator.active = false
@@ -922,7 +923,7 @@ private fun computePreReserveSplit(
             bgZone == BgZone.EXTREME &&
             ctx.slope >= 0.9 &&
             ctx.acceleration >= 0.30 &&
-            ctx.consistency >= 0.45 &&
+            ctx.consistency >= config.episodeMinConsistency &&
             ctx.iobRatio < 0.60
 
     // Split: deliverFrac daalt vloeiend bij hogere doses
@@ -966,7 +967,8 @@ private fun preMealRiseFloorU(
     suppressForPeak: Boolean,
     stagnationActive: Boolean,
     accessLevel: DoseAccessLevel,
-    maxBolus: Double
+    maxBolus: Double,
+    config: FCLvNextConfig
 ): Double {
 
     // ── 1️⃣ WHEN: context & veiligheid ──
@@ -984,7 +986,7 @@ private fun preMealRiseFloorU(
 
     // Duidelijke, consistente stijging boven target
     val rising =
-        ctx.consistency >= 0.45 &&
+        ctx.consistency >= config.episodeMinConsistency &&
             (
                 // normale pre-meal rise
                 (ctx.deltaToTarget >= 1.2 && ctx.slope >= 0.30)
@@ -1235,7 +1237,17 @@ private data class MicroRampResult(
     val reason: String
 )
 
-private fun computeMicroRamp(ctx: FCLvNextContext, config: FCLvNextConfig): MicroRampResult {
+private fun isMacroRising(ctx: FCLvNextContext, peak: PeakEstimate, config: FCLvNextConfig): Boolean {
+    return (
+        peakEstimator.active &&
+            peak.riseSinceStart >= 1.0 &&          // ≥ 1 mmol stijging
+            ctx.deltaToTarget >= 1.5 &&             // duidelijk boven target
+            ctx.consistency >= config.episodeMinConsistency
+        )
+}
+
+
+private fun computeMicroRamp(ctx: FCLvNextContext, config: FCLvNextConfig, peak: PeakEstimate): MicroRampResult {
     val mul = config.microRampThresholdMul
     // algemene safety: meteen stoppen als fast lane draait
     val hardAbort =
@@ -1243,7 +1255,7 @@ private fun computeMicroRamp(ctx: FCLvNextContext, config: FCLvNextConfig): Micr
             ctx.recentSlope <= MEAL_ABORT_SLOPE_HR ||
             ctx.acceleration <= MEAL_ABORT_ACCEL
 
-    if (hardAbort) {
+    if (hardAbort && !isMacroRising(ctx, peak, config)) {
         return MicroRampResult(false, 0.0, "NONE", "MICRO blocked (abort)")
     }
 
@@ -1353,7 +1365,7 @@ private fun computeEarlyDoseDecision(
     config: FCLvNextConfig
     ): EarlyDoseDecision {
 
-    if (ctx.consistency < 0.45) {
+    if (ctx.consistency < config.episodeMinConsistency) {
         return EarlyDoseDecision(false, 0, 0.0, 0.0, "EARLY: low consistency")
     }
 
@@ -1439,7 +1451,7 @@ private fun computeEarlyDoseDecision(
         bgZone == BgZone.EXTREME &&
         ctx.slope >= 0.8 &&
         ctx.acceleration >= 0.25 &&
-        ctx.consistency >= 0.45 &&
+        ctx.consistency >= config.episodeMinConsistency &&
         ctx.deltaToTarget >= 2.5
     ) {
         dynamicStage1Min = (dynamicStage1Min / config.mealConfidenceSpeedMul).coerceIn(0.10, 0.50)
@@ -1473,21 +1485,13 @@ private fun computeEarlyDoseDecision(
 
     val iobPenalty = smooth01((ctx.iobRatio - 0.35) / 0.40)
     factor *= (1.0 - 0.35 * iobPenalty)
-// iets meer iob demping als de piek te hoog is
- /*   val iobPenalty = smooth01((ctx.iobRatio - 0.30) / 0.40)
-    factor *= (1.0 - 0.45 * iobPenalty)  */
-
-  //  if (ctx.input.isNight && ctx.iobRatio >= 0.55) factor *= 0.88
-
-
-  //  val targetU = (config.maxSMB * factor * config.doseStrengthMul).coerceIn(0.0, config.maxSMB)
 
     val minEarlyFrac =
         if (
             stageToFire == 1 &&
             ctx.deltaToTarget >= 0.8 &&
             ctx.slope >= 0.35 &&
-            ctx.consistency >= 0.45
+            ctx.consistency >= config.episodeMinConsistency
         ) {
             // EARLY stage-1 floor:
             // slope ~0.35  -> ~0.20 * maxSMB
@@ -1602,7 +1606,8 @@ private fun trajectoryDampingFactor(
     ctx: FCLvNextContext,
     mealSignal: MealSignal,
     bgZone: BgZone,
-    config: FCLvNextConfig
+    config: FCLvNextConfig,
+    peak: PeakEstimate
 ): Double {
 
 
@@ -1675,12 +1680,14 @@ private fun trajectoryDampingFactor(
     factor = (factor / mealRelax).coerceAtMost(1.0)
 
     // Extra bescherming: hoge IOB + geen meal + geen echte stijging → factor sterk omlaag
-    if (mealSignal.state == MealState.NONE &&
+    if (!isMacroRising(ctx, peak, config) &&
+        mealSignal.state == MealState.NONE &&
         ctx.iobRatio >= 0.65 &&
         ctx.slope < 0.8
     ) {
         factor *= 0.25
     }
+
 
     // 🔒 LOW-BG HARD CLAMP
     if (bgZone == BgZone.LOW && ctx.slope <= 0.0) {
@@ -1737,9 +1744,16 @@ private fun updateDowntrendGate(
         (ctx.recentSlope <= lockSlopeHr || ctx.recentDelta5m <= lockDelta5m) &&
         ctx.deltaToTarget > 0.3 // vermijd lock rond target door mini-ruis
 
-    val fallingSoft = reliable &&
-        (ctx.recentSlope <= pauseSlopeHr || ctx.recentDelta5m <= pauseDelta5m) &&
-        ctx.deltaToTarget > 0.3
+    val macroRising =
+        ctx.slope >= 0.6 &&
+            ctx.deltaToTarget >= 1.0 &&
+            ctx.consistency >= config.episodeMinConsistency
+
+    val fallingSoft =
+        reliable &&
+            !macroRising &&
+            (ctx.recentSlope <= pauseSlopeHr || ctx.recentDelta5m <= pauseDelta5m) &&
+            ctx.deltaToTarget > 0.3
 
     val plateau = reliable &&
         kotlin.math.abs(ctx.recentSlope) <= plateauSlopeAbs &&
@@ -1830,6 +1844,8 @@ private fun shouldHardBlockTrajectory(
 
     // nooit hard block bij meal
     if (mealSignal.state != MealState.NONE) return false
+
+    if (earlyStage > 0) return false
 
     val highIob = ctx.iobRatio >= 0.70
     val notReallyRising = ctx.slope < 0.6
@@ -2021,6 +2037,9 @@ class FCLvNext(
     }
 
 
+
+
+    // ================================================    Get Advice ++++++++++++++++++++++++++++++++++++++
     @SuppressLint("SuspiciousIndentation") fun getAdvice(input: FCLvNextInput): FCLvNextAdvice {
          // reset reserve logging per cycle
         reserveActionThisCycle = "NONE"
@@ -2038,9 +2057,6 @@ class FCLvNext(
         // 1️⃣ Config & context (trends, IOB, delta)
         // ─────────────────────────────────────────────
         val config = loadFCLvNextConfig(preferences, input.isNight)
-
-
-
 
         val ctx = buildContext(input, config)
         val pred60 = predictBg60(ctx)
@@ -2189,7 +2205,7 @@ class FCLvNext(
         if (hardNoDelivery) {
 
             val reason =
-                if (downGate.pauseThisCycle) {
+                if (downGate.pauseThisCycle && !isMacroRising(ctx, peak, config)) {
                     "SHORT-TERM DIP: recentSlope=${"%.2f".format(ctx.recentSlope)} " +
                         "recentΔ5m=${"%.2f".format(ctx.recentDelta5m)}"
                 } else {
@@ -2381,7 +2397,7 @@ class FCLvNext(
 // ─────────────────────────────────────────────
 // 🍽️ MICRO RAMP (earlier IOB, no commit)
 // ─────────────────────────────────────────────
-        val microRamp = computeMicroRamp(ctx, config)
+        val microRamp = computeMicroRamp(ctx, config, peak)
         status.append(microRamp.reason + "\n")
 
         if (
@@ -2411,7 +2427,8 @@ class FCLvNext(
             suppressForPeak = suppressForPeak,
             stagnationActive = (stagnationBoost > 0.0),
             accessLevel = accessLevel,
-            maxBolus = config.maxSMB
+            maxBolus = config.maxSMB,
+            config = config
         )
 
         if (preMealFloor > 0.0 && finalDose < preMealFloor) {
@@ -2441,7 +2458,7 @@ class FCLvNext(
                     status.append("Trajectory BYPASS (earlyStage=$earlyStageCandidate)\n")
                     1.0
                 } else {
-                    trajectoryDampingFactor(ctx, mealSignal, zoneEnum, config)
+                    trajectoryDampingFactor(ctx, mealSignal, zoneEnum, config, peak)
                 }
 
             val before = finalDose
@@ -2451,8 +2468,6 @@ class FCLvNext(
                     "${"%.2f".format(before)}→${"%.2f".format(finalDose)}U\n"
             )
         }
-
-
 
 
         if (early.active && early.targetU > accessCap) {
@@ -2507,7 +2522,7 @@ class FCLvNext(
        // 🟦 PERSISTENT CORRECTION LOOP (dag + nacht)
        // ─────────────────────────────────────────────
         val baseMinDelta =
-            if (ctx.input.isNight) 1.7 else 1.5
+            if (ctx.input.isNight) 1.5 else 1.7
 
         val baseConfirmCycles = 2
         val pMul = config.persistentAggressionMul
@@ -2528,8 +2543,8 @@ class FCLvNext(
             maxBolusU = config.maxSMB,
 
             minDeltaToTarget = effectiveMinDelta,
-            stableSlopeAbs = 0.25,
-            stableAccelAbs = 0.06,
+            stableSlopeAbs = config.persistentSlopeAbs,
+            stableAccelAbs = config.persistentAccelAbs,
             minConsistency = 0.45,
             confirmCycles = effectiveConfirmCycles,
 
@@ -2715,7 +2730,8 @@ class FCLvNext(
 
             // ✅ Commit boost mag óók via pre-peak window (timing fix)
             val allowCommitBoost =
-                allowsLargeActions(trend.state, trendConfirmed) || prePeakCommitWindow
+                prePeakCommitWindow ||
+                    allowsLargeActions(trend.state, trendConfirmed)
 
             if (!allowCommitBoost) {
                 status.append("COMMIT gated (trend=${trend.state}, prePeakWindow=${prePeakCommitWindow})\n")
@@ -3146,6 +3162,8 @@ class FCLvNext(
         logRow.absorptionActive = isInAbsorptionWindow(now, config)
         logRow.reentrySignal = reentry
         logRow.decisionReason = decision.reason
+
+        logRow.doseAccess = accessLevel.name
 
 
         logRow.pred60 = rescueSignal.pred60

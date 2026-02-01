@@ -69,6 +69,7 @@ data class FCLvNextConfig(
     // betrouwbaarheid
     val minConsistency: Double,
     val consistencyExp: Double,
+    val episodeMinConsistency: Double,
 
     // execution
     val deliveryCycleMinutes: Int,
@@ -120,6 +121,10 @@ data class FCLvNextConfig(
     val stagnationAccelMaxAbs: Double,
     val stagnationEnergyBoost: Double,
     val persistentAggressionMul: Double,
+    // persistent plateau detectie
+    val persistentSlopeAbs: Double,
+    val persistentAccelAbs: Double,
+
 
     // early-dose & fast-carb behavior (algorithmic tuning)
     val earlyPeakEscalationBonus: Double,
@@ -223,6 +228,7 @@ fun loadFCLvNextConfig(
         // betrouwbaarheid
         minConsistency = 0.18,
         consistencyExp = 1.00,
+        episodeMinConsistency = 0.45,
 
         // IOB safety
         iobStart = 0.40,
@@ -249,7 +255,7 @@ fun loadFCLvNextConfig(
 
         mealDetectThresholdMul = 1.0,
         microRampThresholdMul = 1.0,
-        mealConfidenceSpeedMul = 1.2,
+        mealConfidenceSpeedMul = 1.25,
 
 
 
@@ -280,6 +286,10 @@ fun loadFCLvNextConfig(
         stagnationAccelMaxAbs = 0.06,
         stagnationEnergyBoost = 0.12,
         persistentAggressionMul = 1.0,
+        // persistent plateau detectie (defaults)
+        persistentSlopeAbs = 0.30,
+        persistentAccelAbs = 0.08,
+
 
         earlyPeakEscalationBonus = 0.10,
         earlyStage1ThresholdMul = 1.00,
@@ -364,7 +374,9 @@ private fun applyMealDetectSpeed(
             mealConfirmConfidence = (cfg.mealConfirmConfidence + 0.10).coerceIn(0.0, 1.0),
             mealDetectThresholdMul = cfg.mealDetectThresholdMul + 0.20,
             microRampThresholdMul =  cfg.microRampThresholdMul + 0.15,
-            mealConfidenceSpeedMul = cfg.mealConfidenceSpeedMul - 0.15
+            mealConfidenceSpeedMul = cfg.mealConfidenceSpeedMul - 0.15,
+            earlyStage1ThresholdMul = cfg.earlyStage1ThresholdMul + 0.10,
+            commitCooldownMinutes = 15
         )
 
         "SLOW" -> cfg.copy(
@@ -375,7 +387,9 @@ private fun applyMealDetectSpeed(
             mealConfirmConfidence = (cfg.mealConfirmConfidence + 0.05).coerceIn(0.0, 1.0),
             mealDetectThresholdMul = cfg.mealDetectThresholdMul + 0.10,
             microRampThresholdMul = cfg.microRampThresholdMul + 0.08,
-            mealConfidenceSpeedMul = cfg.mealConfidenceSpeedMul - 0.08
+            mealConfidenceSpeedMul = cfg.mealConfidenceSpeedMul - 0.08,
+            earlyStage1ThresholdMul = cfg.earlyStage1ThresholdMul + 0.05,
+            commitCooldownMinutes = 15
         )
 
         "FAST" -> cfg.copy(
@@ -386,7 +400,9 @@ private fun applyMealDetectSpeed(
             mealConfirmConfidence = (cfg.mealConfirmConfidence - 0.10).coerceIn(0.0, 1.0),
             mealDetectThresholdMul = cfg.mealDetectThresholdMul - 0.10,
             microRampThresholdMul = cfg.microRampThresholdMul  - 0.08,
-            mealConfidenceSpeedMul = cfg.mealConfidenceSpeedMul + 0.10
+            mealConfidenceSpeedMul = cfg.mealConfidenceSpeedMul + 0.10,
+            earlyStage1ThresholdMul = cfg.earlyStage1ThresholdMul - 0.10,
+            commitCooldownMinutes = 10
         )
 
         "VERY_FAST" -> cfg.copy(
@@ -397,7 +413,9 @@ private fun applyMealDetectSpeed(
             mealConfirmConfidence = (cfg.mealConfirmConfidence - 0.20).coerceIn(0.0, 1.0),
             mealDetectThresholdMul = cfg.mealDetectThresholdMul - 0.20,
             microRampThresholdMul = cfg.microRampThresholdMul - 0.15,
-            mealConfidenceSpeedMul = cfg.mealConfidenceSpeedMul + 0.25
+            mealConfidenceSpeedMul = cfg.mealConfidenceSpeedMul + 0.25,
+            earlyStage1ThresholdMul = cfg.earlyStage1ThresholdMul - 0.20,
+            commitCooldownMinutes = 5
         )
 
         else -> cfg // MODERATE
@@ -420,7 +438,9 @@ private fun applyCorrectionStyle(
             correctionHoldSlopeMax = cfg.correctionHoldSlopeMax + 0.15,
             correctionHoldAccelMax = cfg.correctionHoldAccelMax + 0.05,
             correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 0.60,
-            persistentAggressionMul = cfg.persistentAggressionMul - 0.30
+            persistentAggressionMul = cfg.persistentAggressionMul - 0.30,
+            persistentSlopeAbs = cfg.persistentSlopeAbs - 0.05,
+            persistentAccelAbs = cfg.persistentAccelAbs - 0.02
         )
 
         "CAUTIOUS" -> cfg.copy(
@@ -429,7 +449,9 @@ private fun applyCorrectionStyle(
             correctionHoldSlopeMax = cfg.correctionHoldSlopeMax + 0.10,
             correctionHoldAccelMax = cfg.correctionHoldAccelMax + 0.03,
             correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 0.70,
-            persistentAggressionMul = cfg.persistentAggressionMul - 0.15
+            persistentAggressionMul = cfg.persistentAggressionMul - 0.15,
+            persistentSlopeAbs = cfg.persistentSlopeAbs - 0.02,
+            persistentAccelAbs = cfg.persistentAccelAbs - 0.01
         )
 
         "PERSISTENT" -> cfg.copy(
@@ -438,7 +460,9 @@ private fun applyCorrectionStyle(
             correctionHoldSlopeMax = cfg.correctionHoldSlopeMax - 0.10,
             correctionHoldAccelMax = cfg.correctionHoldAccelMax - 0.03,
             correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 1.30,
-            persistentAggressionMul = cfg.persistentAggressionMul + 0.20
+            persistentAggressionMul = cfg.persistentAggressionMul + 0.20,
+            persistentSlopeAbs = cfg.persistentSlopeAbs + 0.05,
+            persistentAccelAbs = cfg.persistentAccelAbs + 0.02
         )
 
         "VERY_PERSISTENT" -> cfg.copy(
@@ -447,13 +471,15 @@ private fun applyCorrectionStyle(
             correctionHoldSlopeMax = cfg.correctionHoldSlopeMax - 0.15,
             correctionHoldAccelMax = cfg.correctionHoldAccelMax - 0.05,
             correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 1.50,
-            persistentAggressionMul = cfg.persistentAggressionMul + 0.40
-
+            persistentAggressionMul = cfg.persistentAggressionMul + 0.40,
+            persistentSlopeAbs = cfg.persistentSlopeAbs + 0.10,
+            persistentAccelAbs = cfg.persistentAccelAbs + 0.04
         )
 
-        else -> cfg // NORMAL
+        else -> cfg
     }
 }
+
 
 // ─────────────────────────────────────────────
 // 4) ✅ Dose distribution style (SMOOTH / BALANCED / PULSED)

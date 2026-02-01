@@ -124,6 +124,7 @@ import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+
 class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickListener {
 
     @Inject lateinit var aapsLogger: AAPSLogger
@@ -255,6 +256,7 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
         binding.buttonsLayout.acceptTempButton.setOnClickListener(this)
         binding.buttonsLayout.treatmentButton.setOnClickListener(this)
         binding.buttonsLayout.wizardButton.setOnClickListener(this)
+        binding.buttonsLayout.mealIntentButton.setOnClickListener(this)
         binding.buttonsLayout.calibrationButton.setOnClickListener(this)
         binding.buttonsLayout.cgmButton.setOnClickListener(this)
         binding.buttonsLayout.insulinButton.setOnClickListener(this)
@@ -430,6 +432,8 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
                     ProtectionCheck.Protection.BOLUS,
                     UIRunnable { if (isAdded) uiInteraction.runTreatmentDialog(childFragmentManager) })
 
+
+
                 R.id.wizard_button       -> protectionCheck.queryProtection(
                     activity,
                     ProtectionCheck.Protection.BOLUS,
@@ -445,6 +449,15 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
                     activity,
                     ProtectionCheck.Protection.BOLUS,
                     UIRunnable { if (isAdded) uiInteraction.runCarbsDialog(childFragmentManager) })
+
+                R.id.meal_intent_button -> protectionCheck.queryProtection(
+                    activity,
+                    ProtectionCheck.Protection.BOLUS,
+                    UIRunnable {
+                        if (isAdded)
+                            uiInteraction.runMealIntentDialog(childFragmentManager)
+                    }
+                )    //abstract fun contributeInsulinDialog(): InsulinDialog
 
                 R.id.temp_target         -> protectionCheck.queryProtection(
                     activity,
@@ -615,6 +628,14 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
             // **** Various treatment buttons ****
             binding.buttonsLayout.carbsButton.visibility =
                 (profile != null && preferences.get(BooleanKey.OverviewShowCarbsButton)).toVisibility()
+
+            val isFclVNext = activePlugin.activeAPS.javaClass.simpleName.contains("FCL")
+            binding.buttonsLayout.mealIntentButton.visibility =
+                (profile != null && preferences.get(BooleanKey.ShowMealIntentButton) && isFclVNext).toVisibility()
+
+           // binding.buttonsLayout.mealIntentButton.visibility =    insulin_button
+           //     (profile != null && preferences.get(BooleanKey.ShowMealIntentButton)).toVisibility()
+
             binding.buttonsLayout.treatmentButton.visibility = (loop.runningMode != RM.Mode.DISCONNECTED_PUMP && !pump.isSuspended() && pump.isInitialized() && profile != null
                 && preferences.get(BooleanKey.OverviewShowTreatmentButton)).toVisibility()
             binding.buttonsLayout.wizardButton.visibility = (loop.runningMode != RM.Mode.DISCONNECTED_PUMP && !pump.isSuspended() && pump.isInitialized() && profile != null
@@ -1243,8 +1264,8 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
          //           overViewText.add(rh.gs(app.aaps.core.ui.R.string.autosens_short, it))
          //       okDialogText.add(rh.gs(app.aaps.core.ui.R.string.autosens_long, it))
          //   }
-                overViewText.add(rh.gs(app.aaps.core.ui.R.string.autosens_short, ratioUsed))
-                okDialogText.add(rh.gs(app.aaps.core.ui.R.string.autosens_long, ratioUsed))
+            overViewText.add(rh.gs(app.aaps.core.ui.R.string.autosens_short, ratioUsed))
+            okDialogText.add(rh.gs(app.aaps.core.ui.R.string.autosens_long, ratioUsed))
             overViewText.add(
                 String.format(
                     Locale.getDefault(), "%1$.1f→%2$.1f",

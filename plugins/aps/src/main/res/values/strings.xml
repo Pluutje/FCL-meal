@@ -253,7 +253,7 @@ FCL vNext is een geavanceerd algoritme dat automatisch insuline doseert op basis
 Het systeem kijkt continu naar trends, snelheid en betrouwbaarheid van de metingen en houdt rekening met context zoals dag/nacht, activiteit en insulineresistentie.\n
 De instellingen zijn bewust overzichtelijk gehouden en ingedeeld in drie groepen:</string>
     <string name="fcl_vnext_intro_text2">
-• ⚙️ Algemeen gedrag – hoe sterk FCL vNext mag ingrijpen.\n\n
+• ⚙️ Gedrag &amp; veiligheid – hoe sterk FCL vNext mag ingrijpen.\n\n
 • 🧬 Profiel – hoe snel en wanneer het systeem corrigeert.\n\n
 • 🌙 🛡️ 🚶 Context – persoons afhankelijke instellingen.
 </string>

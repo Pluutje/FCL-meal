@@ -219,7 +219,7 @@ class EpisodeTracker {
         private const val START_MIN_BOOST_FRAC = 0.20
         private const val START_IOB_MAX = 0.30
 
-        private const val IOB_END_THRESHOLD = 0.20
+        private const val IOB_END_THRESHOLD = 0.25
         private const val END_NO_INSULIN_MIN = 30
         private const val END_STABLE_MIN = 20
     }
