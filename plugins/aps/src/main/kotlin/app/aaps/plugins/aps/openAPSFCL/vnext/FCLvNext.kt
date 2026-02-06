@@ -3092,50 +3092,12 @@ class FCLvNext(
         var preBolusFiredThisCycle = false
         var preBolusPlannedChunkU = 0.0
 
-/*
-        if (preBolusController.isActive(now)) {
 
-            val riseDetected =
-                ctx.recentDelta5m >= 0.06 || ctx.recentSlope >= 0.20
-
-            if (preBolusController.shouldTrigger(riseDetected, now)) {
-
-                val chunk = preBolusController.computeChunk(config.maxSMB)
-
-                if (chunk > 0.0) {
-
-                    val before = commandedDose
-                    val after = maxOf(commandedDose, chunk)
-
-                    // ✅ Alleen als prebolus daadwerkelijk de dose verhoogt, tellen we hem mee
-                    if (after > before + 1e-9) {
-                        commandedDose = after
-                        preBolusFiredThisCycle = true
-                        preBolusPlannedChunkU = chunk
-                        // 🔥 DIRECT ALS GEVUURD BOEKEN
-                        preBolusController.consumePlannedChunk(chunk, now)
-
-
-                        effectiveHybridPercentage =
-                            (config.hybridPercentage - 20).coerceAtLeast(0)
-
-                        status.append(
-                            "PREBOLUS APPLY: ${"%.2f".format(before)}→" +
-                                "${"%.2f".format(commandedDose)}U " +
-                                "hybrid=${effectiveHybridPercentage}% " +
-                                preBolusController.debugString(now) + "\n"
-                        )
-                    } else {
-                        status.append("PREBOLUS SKIP: commandedDose already >= chunk\n")
-                    }
-                }
-            }
-        }   */
         val preBolusFireAllowed =
             preBolusController.isActive(now) &&
                 zoneEnum != BgZone.LOW &&
                 ctx.input.bgNow >= 4.4 &&
-                pred60 >= 4.2 &&
+          //      pred60 >= 4.2 &&
                 (ctx.recentDelta5m >= 0.06 || ctx.recentSlope >= 0.20)
 
         if (preBolusFireAllowed) {
