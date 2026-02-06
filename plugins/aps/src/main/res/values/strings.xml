@@ -278,7 +278,7 @@ De instellingen zijn bewust overzichtelijk gehouden en ingedeeld in drie groepen
 
     <string name="fcl_vnext_4_MEAL_title">📄 Meer uitleg over de maaltijd instellingen</string>
     <string name="fcl_vnext_4_MEAL_summary">Klik hier voor een overzichtsdocument met uitleg over de maaltijd instellingen.</string>
-
+    <string name="fcl_vnext_4_MEAL_url">https://docs.google.com/document/d/1qo9BumW5eVvhNSAlCLrSXqL1TLQVwZ1y/edit</string>
 
     <!-- ===============================
      Algemeen gedrag

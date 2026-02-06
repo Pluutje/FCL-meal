@@ -866,7 +866,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
         // =================================================
         val MEAL_INTENT = preferenceManager.createPreferenceScreen(context).apply {
             key = "FCLvNextMeal"
-            title = "\uD83C\uDF7D\uFE0F Maaltijden"
+            title = "\uD83C\uDF7D\uFE0F  Maaltijden"
             initialExpandedChildrenCount = Int.MAX_VALUE
 
             addPreference(
@@ -874,7 +874,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
                     ctx = context,
                     intentKey = IntentKey.ApsLinkToDocs,
                     intent = Intent(Intent.ACTION_VIEW).apply {
-                        data = Uri.parse(context.getString(R.string.fcl_vnext_1_ALGEMEEN_GEDRAG_url))
+                        data = Uri.parse(context.getString(R.string.fcl_vnext_4_MEAL_url))
                     },
                     title = R.string.fcl_vnext_4_MEAL_title,
                     summary = R.string.fcl_vnext_4_MEAL_summary
