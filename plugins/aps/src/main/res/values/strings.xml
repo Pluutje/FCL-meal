@@ -242,6 +242,12 @@
     <string name="fcl_vnext_bg_smoothing_alpha_title">BG smoothing factor</string>
     <string name="fcl_vnext_bg_smoothing_alpha_summary">Mate van gladmaken van CGM-ruis vóór trendberekening.\nHoger = rustiger maar trager.\nLager = sneller maar gevoeliger.</string>
 
+    <string name="prebolus_small_title">Pre-bolus klein</string>
+    <string name="prebolus_small_summary">Vooraf toegediende bolus bij een kleine maaltijd.Wordt gebruikt zodra een stijging inzet na het indrukken van de maaltijdknop.</string>
+    <string name="prebolus_normal_title">Pre-bolus normaal</string>
+    <string name="prebolus_normal_summary">Vooraf toegediende bolus bij een normale maaltijd.Helpt snel IOB opbouwen zodra de glucose begint te stijgen.</string>
+    <string name="prebolus_large_title">Pre-bolus groot</string>
+    <string name="prebolus_large_summary">Vooraf toegediende bolus bij een grote maaltijd.Alleen actief bij voldoende veiligheid (geen daling, geen hypo).</string>
 
 
     <!-- ===============================
@@ -269,6 +275,9 @@ De instellingen zijn bewust overzichtelijk gehouden en ingedeeld in drie groepen
     <string name="fcl_vnext_1_CONTEXT_title">📄 Meer uitleg over de context instellingen</string>
     <string name="fcl_vnext_1_CONTEXT_summary">Klik hier voor een overzichtsdocument met uitleg over de context instellingen.</string>
     <string name="fcl_vnext_3_CONTEXT_url">https://docs.google.com/document/d/14i96WNNMVvGhCtEH-u_Tew3pPR4Y5v6b/edit</string>
+
+    <string name="fcl_vnext_4_MEAL_title">📄 Meer uitleg over de maaltijd instellingen</string>
+    <string name="fcl_vnext_4_MEAL_summary">Klik hier voor een overzichtsdocument met uitleg over de maaltijd instellingen.</string>
 
 
     <!-- ===============================
@@ -537,4 +546,6 @@ Sterk: Insuline 50%, TT +2,5mmol max 35 minuten naijl\n
         <item>NORMAL</item>
         <item>STRONG</item>
     </string-array>
+
+    <string name="meal_intent">Maaltijd</string>
 </resources>

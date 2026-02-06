@@ -83,6 +83,15 @@ data class FCLvNextCsvLogRow(
     var correctionStyle: String = "",
     var doseDistributionStyle: String = "",
 
+    // ── Pre-bolus ──
+    var preBolusActive: Boolean = false,
+    var preBolusType: String = "NONE",
+    var preBolusTotalU: Double = 0.0,
+    var preBolusDeliveredU: Double = 0.0,
+    var preBolusRemainingU: Double = 0.0,
+    var preBolusMinutesSinceArmed: Int = -1,
+    var preBolusMinutesRemaining: Int = -1,
+
     // ── Execution ──
     var finalDose: Double = 0.0,
     var commandedDose: Double = 0.0,
@@ -179,6 +188,15 @@ object FCLvNextCsvLogger {
         "correctionStyle",
         "doseDistributionStyle",
 
+        // ── Pre-bolus ──
+        "prebolus_active",
+        "prebolus_type",
+        "prebolus_total_u",
+        "prebolus_delivered_u",
+        "prebolus_remaining_u",
+        "prebolus_minutes_since_armed",
+        "prebolus_minutes_remaining",
+
 
         // ── Execution ──
         "final_dose",
@@ -273,6 +291,15 @@ object FCLvNextCsvLogger {
             correctionStyle = row.correctionStyle,
             doseDistributionStyle = row.doseDistributionStyle,
 
+            preBolusActive = row.preBolusActive,
+            preBolusType = row.preBolusType,
+            preBolusTotalU = row.preBolusTotalU,
+            preBolusDeliveredU = row.preBolusDeliveredU,
+            preBolusRemainingU = row.preBolusRemainingU,
+            preBolusMinutesSinceArmed = row.preBolusMinutesSinceArmed,
+            preBolusMinutesRemaining = row.preBolusMinutesRemaining,
+
+
             finalDose = row.finalDose,
             commandedDose = row.commandedDose,
             deliveredTotal = row.deliveredTotal,
@@ -362,6 +389,15 @@ object FCLvNextCsvLogger {
         mealDetectSpeed: String,
         correctionStyle: String,
         doseDistributionStyle: String,
+
+        // pre-bolus
+        preBolusActive: Boolean,
+        preBolusType: String,
+        preBolusTotalU: Double,
+        preBolusDeliveredU: Double,
+        preBolusRemainingU: Double,
+        preBolusMinutesSinceArmed: Int,
+        preBolusMinutesRemaining: Int,
 
         // execution
         finalDose: Double,
@@ -456,6 +492,14 @@ object FCLvNextCsvLogger {
                 correctionStyle,
                 doseDistributionStyle,
 
+                // pre-bolus
+                preBolusActive,
+                preBolusType,
+                u2(preBolusTotalU),
+                u2(preBolusDeliveredU),
+                u2(preBolusRemainingU),
+                preBolusMinutesSinceArmed,
+                preBolusMinutesRemaining,
 
 
                 // execution

@@ -6,6 +6,7 @@
     android:layout_height="wrap_content"
     android:orientation="vertical">
 
+    <!-- Accept temp basal -->
     <app.aaps.core.ui.elements.SingleClickButton
         android:id="@+id/accept_temp_button"
         style="@style/ButtonSmallFontStyle"
@@ -17,138 +18,128 @@
         android:textColor="?attr/acceptTempButtonColor"
         android:visibility="gone" />
 
+    <!-- Automation / user buttons -->
     <LinearLayout
         android:id="@+id/user_buttons_layout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:paddingStart="@dimen/gray_material_button_margin_horizontal"
-        android:paddingEnd="@dimen/gray_material_button_margin_horizontal">
+        android:paddingEnd="@dimen/gray_material_button_margin_horizontal" />
 
-    </LinearLayout>
-
+    <!-- MAIN ACTION BUTTONS ROW -->
     <LinearLayout
+        android:id="@+id/action_buttons_row"
         android:layout_width="match_parent"
-        android:layout_height="@dimen/overview_action_button_height"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:paddingStart="@dimen/gray_material_button_margin_horizontal"
         android:paddingEnd="@dimen/gray_material_button_margin_horizontal">
 
+        <!-- Treatment -->
         <app.aaps.core.ui.elements.SingleClickButton
             android:id="@+id/treatment_button"
             style="@style/ButtonSmallFontStyle"
-            android:layout_width="0px"
-            android:layout_height="match_parent"
-            android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
             android:layout_weight="0.5"
+            android:minHeight="@dimen/overview_action_button_height"
             android:drawableTop="@drawable/icon_insulin_carbs"
-            android:ellipsize="end"
-            android:singleLine="true"
             android:text="@string/overview_treatment_label"
             android:textColor="?attr/icTreatmentColor"
             android:visibility="gone"
             app:iconPadding="-4dp" />
 
+        <!-- Insulin -->
         <app.aaps.core.ui.elements.SingleClickButton
             android:id="@+id/insulin_button"
             style="@style/ButtonSmallFontStyle"
-            android:layout_width="0px"
-            android:layout_height="match_parent"
-            android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
             android:layout_weight="0.5"
+            android:minHeight="@dimen/overview_action_button_height"
             android:drawableTop="@drawable/ic_bolus"
-            android:ellipsize="end"
-            android:singleLine="true"
             android:text="@string/overview_insulin_label"
             android:textColor="?attr/icBolusColor"
             app:iconPadding="-4dp" />
 
+        <!-- Carbs -->
         <app.aaps.core.ui.elements.SingleClickButton
             android:id="@+id/carbs_button"
             style="@style/ButtonSmallFontStyle"
-            android:layout_width="0px"
-            android:layout_height="match_parent"
-            android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
             android:layout_weight="0.5"
+            android:minHeight="@dimen/overview_action_button_height"
             android:drawableTop="@drawable/ic_cp_bolus_carbs"
-            android:ellipsize="end"
-            android:singleLine="true"
             android:text="@string/carbs"
             android:textColor="?attr/icBolusCarbsColor"
             app:iconPadding="-4dp" />
 
+        <!-- Meal intent -->
         <app.aaps.core.ui.elements.SingleClickButton
             android:id="@+id/meal_intent_button"
             style="@style/ButtonSmallFontStyle"
-            android:layout_width="0px"
-            android:layout_height="match_parent"
-            android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
             android:layout_weight="0.5"
+            android:minHeight="@dimen/overview_action_button_height"
             android:drawableTop="@drawable/ic_meal"
-            android:ellipsize="end"
-            android:singleLine="true"
             android:text="@string/meal_intent"
             android:textColor="#00897B"
             android:visibility="gone"
             app:iconPadding="-4dp" />
 
-
+        <!-- Wizard -->
         <app.aaps.core.ui.elements.SingleClickButton
             android:id="@+id/wizard_button"
             style="@style/ButtonSmallFontStyle"
-            android:layout_width="0px"
-            android:layout_height="match_parent"
-            android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
             android:layout_weight="0.5"
+            android:minHeight="@dimen/overview_action_button_height"
             android:drawableTop="@drawable/ic_calculator"
-            android:ellipsize="end"
-            android:singleLine="true"
             android:text="@string/calculator_label"
             android:textColor="?attr/icCalculatorColor"
             app:iconPadding="-4dp" />
 
+        <!-- Calibration -->
         <app.aaps.core.ui.elements.SingleClickButton
             android:id="@+id/calibration_button"
             style="@style/ButtonSmallFontStyle"
-            android:layout_width="0px"
-            android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/gray_material_button_margin_horizontal"
-            android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
             android:layout_weight="0.5"
+            android:minHeight="@dimen/overview_action_button_height"
             android:drawableTop="@drawable/ic_calibration"
-            android:ellipsize="end"
-            android:singleLine="true"
             android:text="@string/calibration"
             android:textColor="?attr/icCalibrationColor"
             android:visibility="gone"
             app:iconPadding="-4dp" />
 
+        <!-- CGM -->
         <app.aaps.core.ui.elements.SingleClickButton
             android:id="@+id/cgm_button"
             style="@style/ButtonSmallFontStyle"
-            android:layout_width="0px"
-            android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/gray_material_button_margin_horizontal"
-            android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
             android:layout_weight="0.5"
+            android:minHeight="@dimen/overview_action_button_height"
             android:drawableTop="@drawable/ic_xdrip"
-            android:ellipsize="end"
-            android:singleLine="true"
             android:text="@string/overview_cgm"
             android:textColor="?attr/icCalibrationColor"
             android:visibility="gone"
             app:iconPadding="-4dp" />
 
+        <!-- Quick wizard -->
         <app.aaps.core.ui.elements.SingleClickButton
             android:id="@+id/quick_wizard_button"
             style="@style/ButtonSmallFontStyle"
-            android:layout_width="0px"
-            android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/gray_material_button_margin_horizontal"
-            android:layout_marginEnd="@dimen/gray_material_button_margin_horizontal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
             android:layout_weight="0.5"
+            android:minHeight="@dimen/overview_action_button_height"
             android:drawableTop="@drawable/ic_quick_wizard"
-            android:hint="@string/quickwizard"
             android:text="@string/quickwizard"
             android:textColor="?attr/icQuickWizardColor"
             app:iconPadding="-4dp" />

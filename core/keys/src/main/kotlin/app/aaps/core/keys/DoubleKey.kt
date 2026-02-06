@@ -58,6 +58,10 @@ enum class DoubleKey(
     max_bolus_day("max_bolus_day", 1.25,0.1,8.0),
     max_bolus_night("max_bolus_night", 0.5,0.1,8.0),
 
+    prebolus_small(key = "prebolus_small",defaultValue = 1.0,min = 0.0,max = 3.0),
+    prebolus_normal(key = "prebolus_normal",defaultValue = 2.0,min = 0.0,max = 6.0),
+    prebolus_large(key = "prebolus_large",defaultValue = 3.0,min = 0.0,max = 9.0),
+
 
     fcl_vnext_gain_day("fcl_vnext_gain_day", 1.0,0.3,2.0),
     fcl_vnext_gain_night("fcl_vnext_gain_night", 0.7,0.2,1.5),

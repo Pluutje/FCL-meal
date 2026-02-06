@@ -4,10 +4,13 @@ package app.aaps.plugins.aps.openAPSFCL.vnext
 import android.annotation.SuppressLint
 import org.joda.time.DateTime
 import app.aaps.core.keys.interfaces.Preferences
+import app.aaps.core.keys.DoubleKey
 import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextCsvLogger
 import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextParameterLogger
 import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextProfileParameterSnapshot
 import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextCsvLogRow
+import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
+import app.aaps.core.interfaces.meal.MealIntentType
 import kotlin.math.roundToInt
 
 data class FCLvNextInput(
@@ -170,12 +173,6 @@ private fun classifyTrendState(ctx: FCLvNextContext, config: FCLvNextConfig): Tr
     )
 }
 
-private fun allowsLargeActions(
-    trend: TrendState,
-    persistentConfirmed: Boolean
-): Boolean =
-    trend == TrendState.RISING_CONFIRMED && persistentConfirmed
-
 
 // ─────────────────────────────────────────────
 // Meal-episode peak estimator (persistent over cycles)
@@ -232,39 +229,7 @@ private fun computeBgZone(ctx: FCLvNextContext): BgZone {
         else -> BgZone.EXTREME                                  // zeer hoog
     }
 }
-/*
-private fun computeDoseAccessLevel(
-    ctx: FCLvNextContext,
-    bgZone: BgZone
-): DoseAccessLevel {
 
-    return when (bgZone) {
-
-        BgZone.LOW ->
-            DoseAccessLevel.BLOCKED
-
-        BgZone.IN_RANGE -> when {
-            // meal/fast-rise: niet compleet blokkeren
-            ctx.slope >= 0.6 && ctx.acceleration >= 0.10 -> DoseAccessLevel.MICRO_ONLY
-            else -> DoseAccessLevel.BLOCKED
-        }
-
-        BgZone.MID -> when {
-            ctx.slope < 0.5 ->
-                DoseAccessLevel.MICRO_ONLY
-            ctx.slope < 0.9 ->
-                DoseAccessLevel.SMALL
-            else ->
-                DoseAccessLevel.NORMAL
-        }
-
-        BgZone.HIGH ->
-            DoseAccessLevel.NORMAL
-
-        BgZone.EXTREME ->
-            DoseAccessLevel.NORMAL
-    }
-}   */
 
 // NIEUW:
 private fun computeDoseAccessLevel(
@@ -393,6 +358,7 @@ private val persistCtrl = PersistentCorrectionController(
     cooldownCycles = 3,        // of 2, jij kiest
     maxBolusFraction = 0.30
 )
+// private val preBolusCtrl = PreBolusController()
 
 
 
@@ -850,12 +816,7 @@ private fun detectMealSignal(ctx: FCLvNextContext, config: FCLvNextConfig): Meal
     val reason = "MealSignal=$state conf=${"%.2f".format(confidence)}"
     return MealSignal(state, confidence, reason)
 }
-/*
-private fun canCommitNow(now: DateTime, config: FCLvNextConfig): Boolean {
-    val last = lastCommitAt ?: return true
-    val minutes = org.joda.time.Minutes.minutesBetween(last, now).minutes
-    return minutes >= config.commitCooldownMinutes
-}   */
+
 
 // NIEUW:
 private fun canCommitNow(now: DateTime, ctx: FCLvNextContext, config: FCLvNextConfig): Boolean {
@@ -1022,11 +983,7 @@ private fun preMealRiseFloorU(
         .coerceAtMost(0.50)
 }
 
-private data class CommitLearningDebug(
-    val baseMin: Double,
-    val multiplier: Double,
-    val effectiveMin: Double
-)
+
 
 private fun computeCommitFraction(
     signal: MealSignal,
@@ -1359,7 +1316,6 @@ private fun computeEarlyDoseDecision(
     mealSignal: MealSignal,
     peak: PeakEstimate,
     trend: TrendDecision,
-    trendConfirmedPersistent: Boolean, // <-- nieuw
     bgZone : BgZone,
     now: DateTime,
     config: FCLvNextConfig
@@ -1461,7 +1417,7 @@ private fun computeEarlyDoseDecision(
     val minutesSinceLastFire =
         minutesSince(earlyDose.lastFireAt, now)
 
-    val allowLarge = allowsLargeActions(trend.state, trendConfirmedPersistent)
+    val allowLarge = (trend.state == TrendState.RISING_CONFIRMED)
 
 // stageToFire:
     val stageToFire = when {
@@ -1543,6 +1499,24 @@ private fun evaluatePostPeak(
     val inAbsorption = isInAbsorptionWindow(now, config)
     val reliable = ctx.consistency >= config.minConsistency
 
+    // episode-like: ook zonder absorption kunnen we een top herkennen
+    val episodeLike =
+        mealSignal.state != MealState.NONE || peakEstimator.active || peak.state != PeakPredictionState.IDLE
+
+// FAST-lane top/plateau: macro slope kan nog hoog zijn door historie, dus fast-lane is leidend
+    val fastPlateau =
+        ctx.recentSlope <= 0.20 &&
+            kotlin.math.abs(ctx.recentDelta5m) <= 0.03
+
+// "Top forming" pre-commit: voldoende IOB + (bijna) vlak → dan geen extra insulin pushen
+    val preCommitTop =
+        episodeLike && reliable &&
+            ctx.iobRatio >= 0.45 &&
+            ctx.deltaToTarget >= 1.0 &&
+            ctx.acceleration <= 0.06 &&      // jouw 13:47 accel=0.03 moet dit raken
+            fastPlateau
+
+
     // Basale post-peak kenmerken
     val flattening = ctx.acceleration <= 0.05
     val notRising = ctx.slope < 0.60
@@ -1550,26 +1524,41 @@ private fun evaluatePostPeak(
 
     // SUPPRESS: mild, alleen tijdens absorption
     val suppress =
-        inAbsorption && reliable &&
-            (ctx.slope <= config.peakSlopeThreshold || ctx.acceleration <= config.peakAccelThreshold)
+        reliable && (
+            // bestaande post-commit suppress
+            (inAbsorption &&
+                (ctx.slope <= config.peakSlopeThreshold || ctx.acceleration <= config.peakAccelThreshold)
+                )
+                // ✅ NIEUW: pre-commit top/plateau suppress
+                || preCommitTop
+            )
+
 
     // LOCKOUT: hard, ook tijdens absorption
     val dynamicIobThreshold =
         (0.30 + 0.07 * ctx.deltaToTarget).coerceIn(0.30, 0.70)
     val lockout =
-        inAbsorption && reliable &&
-            ((ctx.slope <= config.peakSlopeThreshold) || (ctx.acceleration <= config.peakAccelThreshold)) &&
-            (ctx.iobRatio >= dynamicIobThreshold)
+        reliable && (
+            // bestaande lockout (post-commit)
+            (inAbsorption &&
+                ((ctx.slope <= config.peakSlopeThreshold) || (ctx.acceleration <= config.peakAccelThreshold)) &&
+                (ctx.iobRatio >= dynamicIobThreshold)
+                )
+                // ✅ NIEUW: pre-commit lockout als het écht top/plateau is met al genoeg IOB
+                || (preCommitTop && ctx.iobRatio >= 0.55)
+            )
+
 
     // COMMIT BLOCK: voorkomen van “commit na omkeer”
     val commitBlocked =
-        ctx.acceleration < -0.05 &&
-            ctx.iobRatio >= 0.45 &&
-            reliable
+        reliable && (
+            // bestaande omkeer-blok
+            (ctx.acceleration < -0.05 && ctx.iobRatio >= 0.45)
+                // ✅ NIEUW: ook blokkeren bij duidelijke plateau/top met al genoeg IOB
+                || (preCommitTop && ctx.iobRatio >= 0.45)
+            )
 
-    // Commit damp factor (oude computePostPeakDamp logica, maar compact)
-    val episodeLike =
-        mealSignal.state != MealState.NONE || peakEstimator.active || peak.state != PeakPredictionState.IDLE
+
 
     val commitFactor =
         if (!episodeLike) 1.0
@@ -1584,7 +1573,7 @@ private fun evaluatePostPeak(
 
     // NO-STASH window: als je al in post-peak afvlak zit, niet nog extra potjes maken
     val noStash =
-        highIob && flattening && reliable && ctx.recentSlope <= 0.20
+        highIob && flattening && reliable && fastPlateau
 
     val reason =
         "POSTPEAK: suppress=$suppress lockout=$lockout commitBlocked=$commitBlocked " +
@@ -1961,7 +1950,8 @@ private fun heightEscalationFactor(
 
 
 class FCLvNext(
-    private val preferences: Preferences
+    private val preferences: Preferences,
+    private val preBolusController: PreBolusController
 ) {
 
 
@@ -2051,15 +2041,61 @@ class FCLvNext(
             bg = input.bgNow,
             target = input.targetBG
         )
-
+        val status = StringBuilder()
         
+
         // ─────────────────────────────────────────────
         // 1️⃣ Config & context (trends, IOB, delta)
+        var config = loadFCLvNextConfig(preferences, input.isNight)
+
+        // 🍽️ MealIntent overlay (timing only, TTL-based)
+        val now = DateTime.now()
+        val mealIntentEffect =
+            app.aaps.plugins.aps.openAPSFCL.vnext.meal.computeMealIntentEffect(now)
+
+        config =
+            app.aaps.plugins.aps.openAPSFCL.vnext.meal.applyMealIntentToConfig(
+                base = config,
+                effect = mealIntentEffect
+            )
         // ─────────────────────────────────────────────
-        val config = loadFCLvNextConfig(preferences, input.isNight)
+        // 🍽️ PRE-BOLUS ARM (via MealIntentRepository)
+        // ─────────────────────────────────────────────
+        preBolusController.cleanupIfExpired(now)
+        val mealIntent =
+            app.aaps.core.interfaces.meal.MealIntentRepository.get()
+
+        if (
+            mealIntent != null &&
+            preBolusController.validUntil()?.millis != mealIntent.validUntil
+        ) {
+            val type = mealIntent.type
+
+            val preBolusU = when (type) {
+                MealIntentType.SMALL  -> preferences.get(DoubleKey.prebolus_small)
+                MealIntentType.NORMAL -> preferences.get(DoubleKey.prebolus_normal)
+                MealIntentType.LARGE  -> preferences.get(DoubleKey.prebolus_large)
+            }
+
+            preBolusController.arm(
+                type = type,
+                preBolusU = preBolusU,
+                validUntil = DateTime(mealIntent.validUntil),
+                now = now
+            )
+
+
+
+            status.append(
+                "PREBOLUS ARMED: ${type} ${"%.2f".format(preBolusU)}U " +
+                    "until=${DateTime(mealIntent.validUntil).toString("HH:mm")}\n"
+            )
+        }
+
 
         val ctx = buildContext(input, config)
         val pred60 = predictBg60(ctx)
+
 
         val zoneEnum = computeBgZone(ctx)
         val bgZone = zoneEnum.name
@@ -2081,7 +2117,7 @@ class FCLvNext(
         logRow.consistency = ctx.consistency
 
 
-        val status = StringBuilder()
+
         status.append("PROFILE=${config.profielNaam}\n")
         status.append("MEAL_SPEED=${config.mealDetectSpeed}\n")
         status.append("CORRECTION=${config.correctionStyle}\n")
@@ -2165,7 +2201,7 @@ class FCLvNext(
         // 6a️⃣ Peak prediction (voor IOB-remming)
         // ─────────────────────────────────────────────
 
-        val now = DateTime.now()
+
         val mealSignal = detectMealSignal(ctx, config)
         // Peak-estimator mag ook actief worden zonder mealSignal,
         // maar niet bij lage betrouwbaarheid
@@ -2356,7 +2392,6 @@ class FCLvNext(
             mealSignal = mealSignal,
             peak = peak,
             trend = trend,
-            trendConfirmedPersistent = trendConfirmed,
             bgZone = zoneEnum,
             now = now,
             config = config
@@ -2554,24 +2589,29 @@ class FCLvNext(
 
 
 
-        if (persistResult.active) {
+        val preBolusActive = preBolusController.isActive(now)
+
+
+
+        if (persistResult.active && !preBolusActive) {
             status.append("PERSIST: ${persistResult.reason}\n")
 
             if (persistResult.fired) {
-                // 🔑 Persistent neemt hier expliciet de leiding
                 finalDose = persistResult.doseU
                 status.append(
                     "PERSIST APPLY: finalDose=${"%.2f".format(finalDose)}U\n"
                 )
             } else {
-                // cooldown / hold → bewust niets doen
                 finalDose = 0.0
                 status.append("PERSIST HOLD: finalDose=0\n")
             }
+        } else if (persistResult.active && preBolusActive) {
+            status.append("PERSIST SUPPRESSED (PRE-BOLUS ACTIVE)\n")
         }
 
+
         // 🔒 markeer dat persistent de leiding heeft
-        val persistentOverrideActive = persistResult.active
+        val persistentOverrideActive = persistResult.active && !preBolusActive
 
         if (persistentOverrideActive) {
             status.append(
@@ -2588,7 +2628,7 @@ class FCLvNext(
         val earlyConfirm =
             !earlyConfirmDone &&
                 earlyDose.stage >= 2 &&                 // we hadden al een early boost
-                allowsLargeActions(trend.state, trendConfirmed) &&     // <-- nieuw: harde gate
+                (trend.state == TrendState.RISING_CONFIRMED) &&     // <-- nieuw: harde gate
                 ctx.slope >= 1.0 &&                     // duidelijke stijging
                 ctx.acceleration >= 0.20 &&             // versnelling bevestigd
                 ctx.deltaToTarget >= 2.0 &&             // echt boven target
@@ -2654,13 +2694,7 @@ class FCLvNext(
         status.append(mealSignal.reason + "\n")
         status.append("CommitAllowed=${if (commitAllowed) "YES" else "NO"}\n")
 
-        var commandedDose =
-            if (persistentOverrideActive) {
-                // 🔒 persistent beslist volledig
-                finalDose
-            } else {
-                finalDose
-            }
+        var commandedDose = finalDose
 
         // ── Anti-drip: kleine correcties niet elke cyclus ──
         if (commandedDose > 0.0 &&
@@ -2731,7 +2765,7 @@ class FCLvNext(
             // ✅ Commit boost mag óók via pre-peak window (timing fix)
             val allowCommitBoost =
                 prePeakCommitWindow ||
-                    allowsLargeActions(trend.state, trendConfirmed)
+                    (trend.state == TrendState.RISING_CONFIRMED)
 
             if (!allowCommitBoost) {
                 status.append("COMMIT gated (trend=${trend.state}, prePeakWindow=${prePeakCommitWindow})\n")
@@ -3035,6 +3069,52 @@ class FCLvNext(
             earlyConfirmDone = false
         }
 
+        // ─────────────────────────────────────────────
+        // 🍽️ PRE-BOLUS OVERRIDE (chunked, vóór delivery)
+        // ─────────────────────────────────────────────
+        var effectiveHybridPercentage = config.hybridPercentage
+        var preBolusFiredThisCycle = false
+        var preBolusPlannedChunkU = 0.0
+
+        if (preBolusController.isActive(now)) {
+
+            val riseDetected =
+                ctx.recentDelta5m >= 0.06 || ctx.recentSlope >= 0.20
+
+            if (preBolusController.shouldTrigger(riseDetected, now)) {
+
+                val chunk = preBolusController.computeChunk(config.maxSMB)
+
+                if (chunk > 0.0) {
+
+                    val before = commandedDose
+                    val after = maxOf(commandedDose, chunk)
+
+                    // ✅ Alleen als prebolus daadwerkelijk de dose verhoogt, tellen we hem mee
+                    if (after > before + 1e-9) {
+                        commandedDose = after
+                        preBolusFiredThisCycle = true
+                        preBolusPlannedChunkU = chunk
+                        // 🔥 DIRECT ALS GEVUURD BOEKEN
+                        preBolusController.consumePlannedChunk(chunk, now)
+
+
+                        effectiveHybridPercentage =
+                            (config.hybridPercentage - 20).coerceAtLeast(0)
+
+                        status.append(
+                            "PREBOLUS APPLY: ${"%.2f".format(before)}→" +
+                                "${"%.2f".format(commandedDose)}U " +
+                                "hybrid=${effectiveHybridPercentage}% " +
+                                preBolusController.debugString(now) + "\n"
+                        )
+                    } else {
+                        status.append("PREBOLUS SKIP: commandedDose already >= chunk\n")
+                    }
+                }
+            }
+        }
+
 
 
 
@@ -3043,7 +3123,7 @@ class FCLvNext(
         // ─────────────────────────────────────────────
         val execution = executeDelivery(
             dose = commandedDose,
-            hybridPercentage = config.hybridPercentage,
+            hybridPercentage = effectiveHybridPercentage,
             cycleMinutes = config.deliveryCycleMinutes,
             maxTempBasalRate = config.maxTempBasalRate,
             smallDoseThreshold = config.smallDoseThresholdU
@@ -3054,6 +3134,8 @@ class FCLvNext(
         // ✅ NEW: als het onder de zichtbare/werkelijke delivery drempel is, behandel als 0
         val effectiveDeliveredNow =
             if (deliveredNow >= minDeliveryU) deliveredNow else 0.0
+
+
 
         val effectiveBolus =
             if (deliveredNow >= minDeliveryU) execution.bolus else 0.0
@@ -3170,6 +3252,20 @@ class FCLvNext(
         logRow.rescueState = rescueSignal.state.name
         logRow.rescueConfidence = rescueSignal.confidence
         logRow.rescueReason = rescueSignal.reason
+
+        // ─────────────────────────────────────────────
+        // Pre-bolus logging fields
+        // ─────────────────────────────────────────────
+        val pb = preBolusController.snapshot(now)
+
+        logRow.preBolusActive = (pb != null)
+
+        logRow.preBolusType = pb?.mealType?.name ?: "NONE"
+        logRow.preBolusTotalU = pb?.totalU ?: 0.0
+        logRow.preBolusDeliveredU = pb?.deliveredU ?: 0.0
+        logRow.preBolusRemainingU = pb?.remainingU ?: 0.0
+        logRow.preBolusMinutesSinceArmed = pb?.minutesSinceArmed ?: -1
+        logRow.preBolusMinutesRemaining = pb?.minutesRemaining ?: -1
 
         logRow.finalDose = finalDose
         logRow.commandedDose = commandedDose

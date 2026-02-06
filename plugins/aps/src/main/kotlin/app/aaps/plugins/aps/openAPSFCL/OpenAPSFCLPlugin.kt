@@ -538,6 +538,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
             )
 
 
+
         }
 
         // =================================================
@@ -860,6 +861,64 @@ open class OpenAPSFCLPlugin @Inject constructor(
             )
         }
 
+        // =================================================
+        // 1️⃣ ALGEMEEN GEDRAG
+        // =================================================
+        val MEAL_INTENT = preferenceManager.createPreferenceScreen(context).apply {
+            key = "FCLvNextMeal"
+            title = "\uD83C\uDF7D\uFE0F Maaltijden"
+            initialExpandedChildrenCount = Int.MAX_VALUE
+
+            addPreference(
+                AdaptiveIntentPreference(
+                    ctx = context,
+                    intentKey = IntentKey.ApsLinkToDocs,
+                    intent = Intent(Intent.ACTION_VIEW).apply {
+                        data = Uri.parse(context.getString(R.string.fcl_vnext_1_ALGEMEEN_GEDRAG_url))
+                    },
+                    title = R.string.fcl_vnext_4_MEAL_title,
+                    summary = R.string.fcl_vnext_4_MEAL_summary
+                )
+            )
+
+
+            addPreference(
+                AdaptiveSwitchPreference(
+                    ctx = context,
+                    booleanKey = BooleanKey.ShowMealIntentButton,
+                    title = R.string.meal_intent)
+            )
+            addPreference(
+                AdaptiveDoublePreference(
+                    ctx = context,
+                    doubleKey = DoubleKey.prebolus_small,
+                    dialogMessage = R.string.prebolus_small_summary,
+                    title = R.string.prebolus_small_title
+                )
+            )
+
+            addPreference(
+                AdaptiveDoublePreference(
+                    ctx = context,
+                    doubleKey = DoubleKey.prebolus_normal,
+                    dialogMessage = R.string.prebolus_normal_summary,
+                    title = R.string.prebolus_normal_title
+                )
+            )
+
+            addPreference(
+                AdaptiveDoublePreference(
+                    ctx = context,
+                    doubleKey = DoubleKey.prebolus_large,
+                    dialogMessage = R.string.prebolus_large_summary,
+                    title = R.string.prebolus_large_title
+                )
+            )
+
+
+
+        }
+
 
         // =================================================
         // ROOT
@@ -867,6 +926,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
         parent.addPreference(GENERAL)
         parent.addPreference(PROFILES)
         parent.addPreference(CONTEXT)
+        parent.addPreference(MEAL_INTENT)
      //   parent.addPreference(SAFETY)
     }
 

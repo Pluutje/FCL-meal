@@ -44,6 +44,7 @@ import android.content.Context
 
 import org.joda.time.Hours
 import app.aaps.core.data.model.SC
+import app.aaps.core.interfaces.meal.MealIntentRepository
 import app.aaps.plugins.aps.openAPSFCL.vnext.model.BGDataPoint
 import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextStatusFormatter
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsOrchestrator
@@ -59,6 +60,7 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextTrends
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsBgProviderAdapter
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsInsulinDeliveryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsLearningStore
+import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
 
 @Singleton
 
@@ -75,8 +77,11 @@ class DetermineBasalFCL @Inject constructor(
     private val fclMetrics = FCLMetrics(context = context,preferences = preferences,persistenceLayer = persistenceLayer)
     private val fclActivityModule = FCLActivityModule(preferences = preferences,persistenceLayer = persistenceLayer,context = context)
     private val fclResistance = FCLResistance(preferences = preferences,persistenceLayer = persistenceLayer,context = context)
-    private val fclvNext = FCLvNext(preferences)
+
     private val bgHistoryProvider = FCLvNextBgHistoryProvider(persistenceLayer)
+
+    private val preBolusController = PreBolusController()
+    private val fclvNext = FCLvNext(preferences, preBolusController)
 
     private val obsInsulinProvider =
         FCLvNextObsInsulinDeliveryProvider(
@@ -474,7 +479,13 @@ class DetermineBasalFCL @Inject constructor(
                 }
 
 
-            val statusFormatter = FCLvNextStatusFormatter(preferences)
+            val statusFormatter =
+                FCLvNextStatusFormatter(
+                    prefs = preferences,
+                    mealIntentRepository = MealIntentRepository,
+                    preBolusController = preBolusController
+                )
+
 
             val uiText = statusFormatter.buildStatus(
                 isNight = isNight,
