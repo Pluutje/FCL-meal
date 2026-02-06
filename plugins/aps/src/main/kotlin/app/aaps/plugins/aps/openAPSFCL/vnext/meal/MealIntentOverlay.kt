@@ -9,11 +9,23 @@ import kotlin.math.min
 
 data class MealIntentEffect(
     val active: Boolean,
-    val strength: Double,   // 0..1
+    val strength: Double,        // TTL 0..1
+    val assistStrength: Double,  // 🆕 hulp-schaal 0..1
     val assumeCarbs: Boolean,
     val type: MealIntentType,
     val reason: String
 )
+
+private fun expectedMealScale(
+    type: MealIntentType,
+    maxSmb: Double
+): Double =
+    when (type) {
+        MealIntentType.SMALL  -> 1.0 * maxSmb
+        MealIntentType.NORMAL -> 2.0 * maxSmb
+        MealIntentType.LARGE  -> 3.0 * maxSmb
+    }
+
 
 
 private fun lerp(a: Double, b: Double, t: Double): Double =
@@ -24,11 +36,16 @@ private fun lerp(a: Double, b: Double, t: Double): Double =
  * - gebruikt Repository (TTL is daar al afgevangen)
  * - strength loopt lineair af tot 0
  */
-fun computeMealIntentEffect(now: DateTime): MealIntentEffect {
+fun computeMealIntentEffect(
+    now: DateTime,
+    maxSmb: Double,
+    preBolusU: Double
+): MealIntentEffect {
     val intent = MealIntentRepository.get()
         ?: return MealIntentEffect(
             active = false,
             strength = 0.0,
+            assistStrength = 0.0,
             assumeCarbs = false,
             type = MealIntentType.NORMAL,
             reason = "MealIntent: none"
@@ -42,14 +59,32 @@ fun computeMealIntentEffect(now: DateTime): MealIntentEffect {
         (remainingMs.toDouble() / totalMs.toDouble())
             .coerceIn(0.0, 1.0)
 
+    val expected = expectedMealScale(intent.type, maxSmb)
+
+// verhouding prebolus t.o.v. "verwachte" hoeveelheid
+    val coverage =
+        if (expected > 0.0)
+            (preBolusU / expected).coerceIn(0.0, 1.2)
+        else
+            0.0
+
+// assist: hoe minder coverage, hoe meer hulp
+    val assistStrength =
+        (1.0 - coverage).coerceIn(0.0, 1.0)
+
+
     return MealIntentEffect(
         active = strength > 0.0,
         strength = strength,
-        assumeCarbs = true,   // 🔴 dit is de kern
+        assistStrength = assistStrength,
+        assumeCarbs = true,
         type = intent.type,
         reason =
-            "MealIntent=${intent.type} strength=${"%.2f".format(strength)}"
+            "MealIntent=${intent.type} " +
+                "ttl=${"%.2f".format(strength)} " +
+                "assist=${"%.2f".format(assistStrength)}"
     )
+
 
 }
 
@@ -66,15 +101,16 @@ fun applyMealIntentToConfig(
 
     if (!effect.active) return base
 
-    val s = effect.strength
+    val s = effect.strength          // TTL (tijd)
+    val a = effect.assistStrength   // 🆕 hulp-schaal
 
     // 🔴 Kern: we vertrouwen BG-stijging volledig als carb
-    val detectMul = lerp(1.0, 0.55, s)   // veel sneller detecteren
-    val earlyMul  = lerp(1.0, 0.65, s)
-    val microMul  = lerp(1.0, 0.65, s)
+    val detectMul = lerp(1.0, 0.55, s * a)
+    val earlyMul  = lerp(1.0, 0.60, s * a)
+    val microMul  = lerp(1.0, 0.60, s * a)
 
     // 🔴 Minder remmen
-    val iobPowerMul = lerp(1.0, 0.75, s)
+    val iobPowerMul = lerp(1.0, 0.80, s * a)
     val peakSlopeMul = lerp(1.0, 0.80, s)
 
     return base.copy(

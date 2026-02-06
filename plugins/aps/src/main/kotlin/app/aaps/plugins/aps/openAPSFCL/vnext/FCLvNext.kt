@@ -11,6 +11,8 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextProfileParameterSna
 import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextCsvLogRow
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
 import app.aaps.core.interfaces.meal.MealIntentType
+import app.aaps.plugins.aps.openAPSFCL.vnext.meal.applyMealIntentToConfig
+import app.aaps.plugins.aps.openAPSFCL.vnext.meal.computeMealIntentEffect
 import kotlin.math.roundToInt
 
 data class FCLvNextInput(
@@ -2050,20 +2052,38 @@ class FCLvNext(
 
         // 🍽️ MealIntent overlay (timing only, TTL-based)
         val now = DateTime.now()
-        val mealIntentEffect =
-            app.aaps.plugins.aps.openAPSFCL.vnext.meal.computeMealIntentEffect(now)
-
-        config =
-            app.aaps.plugins.aps.openAPSFCL.vnext.meal.applyMealIntentToConfig(
-                base = config,
-                effect = mealIntentEffect
-            )
-        // ─────────────────────────────────────────────
-        // 🍽️ PRE-BOLUS ARM (via MealIntentRepository)
-        // ─────────────────────────────────────────────
         preBolusController.cleanupIfExpired(now)
         val mealIntent =
             app.aaps.core.interfaces.meal.MealIntentRepository.get()
+
+        var preBolusUForAssist = 0.0
+
+        if (mealIntent != null) {
+            preBolusUForAssist =
+                when (mealIntent.type) {
+                    MealIntentType.SMALL  -> preferences.get(DoubleKey.prebolus_small)
+                    MealIntentType.NORMAL -> preferences.get(DoubleKey.prebolus_normal)
+                    MealIntentType.LARGE  -> preferences.get(DoubleKey.prebolus_large)
+                }
+        }
+
+
+        val mealIntentEffect = computeMealIntentEffect(
+                now = now,
+                maxSmb = config.maxSMB,
+                preBolusU = preBolusUForAssist
+            )
+
+
+        config = applyMealIntentToConfig(
+                base = config,
+                effect = mealIntentEffect
+            )
+
+        // ─────────────────────────────────────────────
+        // 🍽️ PRE-BOLUS ARM (via MealIntentRepository)
+        // ─────────────────────────────────────────────
+
 
         if (
             mealIntent != null &&
