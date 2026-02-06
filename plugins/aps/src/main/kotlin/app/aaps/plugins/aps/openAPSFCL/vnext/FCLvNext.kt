@@ -13,6 +13,9 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
 import app.aaps.core.interfaces.meal.MealIntentType
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.applyMealIntentToConfig
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.computeMealIntentEffect
+import app.aaps.plugins.aps.openAPSFCL.vnext.model.computeIobOvershootFactor
+import app.aaps.plugins.aps.openAPSFCL.vnext.model.clampDoseByIob
+
 import kotlin.math.roundToInt
 
 data class FCLvNextInput(
@@ -3074,6 +3077,41 @@ class FCLvNext(
             earlyConfirmDone = false
         }
 
+        // ─────────────────────────────────────────────
+        // 🛡️ IOB HARD CAP + DYNAMIC OVERSHOOT (EXCL. PREBOLUS)
+        // ─────────────────────────────────────────────
+
+
+
+        if (!preBolusActive && commandedDose > 0.0) {
+
+            // Dynamische overshoot: 0..10% op basis van smoothed trend
+            val iobOvershootFactor =
+                computeIobOvershootFactor(
+                    smoothedSlope = ctx.slope,
+                    deltaToTarget = ctx.deltaToTarget,
+                    maxOvershootPct = 0.10      // later eventueel preference
+                )
+
+            val before = commandedDose
+
+            commandedDose =
+                clampDoseByIob(
+                    commandedDose = commandedDose,
+                    currentIob = input.currentIOB,
+                    maxIob = input.maxIOB,
+                    overshootFactor = iobOvershootFactor
+                )
+
+            if (commandedDose < before) {
+                status.append(
+                    "IOB CLAMP: dose ${"%.2f".format(before)}→${"%.2f".format(commandedDose)}U " +
+                        "(iob=${"%.2f".format(input.currentIOB)} " +
+                        "max=${"%.2f".format(input.maxIOB)} " +
+                        "×${"%.2f".format(iobOvershootFactor)})\n"
+                )
+            }
+        }
 
 
         // ─────────────────────────────────────────────
