@@ -358,7 +358,7 @@ private val persistCtrl = PersistentCorrectionController(
     cooldownCycles = 3,        // of 2, jij kiest
     maxBolusFraction = 0.30
 )
-// private val preBolusCtrl = PreBolusController()
+
 
 
 
@@ -2084,8 +2084,6 @@ class FCLvNext(
                 now = now
             )
 
-
-
             status.append(
                 "PREBOLUS ARMED: ${type} ${"%.2f".format(preBolusU)}U " +
                     "until=${DateTime(mealIntent.validUntil).toString("HH:mm")}\n"
@@ -2588,9 +2586,7 @@ class FCLvNext(
         )
 
 
-
         val preBolusActive = preBolusController.isActive(now)
-
 
 
         if (persistResult.active && !preBolusActive) {
@@ -3076,6 +3072,7 @@ class FCLvNext(
         var preBolusFiredThisCycle = false
         var preBolusPlannedChunkU = 0.0
 
+/*
         if (preBolusController.isActive(now)) {
 
             val riseDetected =
@@ -3113,8 +3110,50 @@ class FCLvNext(
                     }
                 }
             }
-        }
+        }   */
+        val preBolusFireAllowed =
+            preBolusController.isActive(now) &&
+                zoneEnum != BgZone.LOW &&
+                ctx.input.bgNow >= 4.4 &&
+                pred60 >= 4.2 &&
+                (ctx.recentDelta5m >= 0.06 || ctx.recentSlope >= 0.20)
 
+        if (preBolusFireAllowed) {
+
+            val chunk = preBolusController.computeChunk(config.maxSMB)
+
+            if (chunk > 0.0) {
+                val before = commandedDose
+                val after = maxOf(commandedDose, chunk)
+
+                if (after > before + 1e-9) {
+                    commandedDose = after
+                    preBolusController.consumePlannedChunk(chunk, now)
+
+                    effectiveHybridPercentage =
+                        (config.hybridPercentage - 20).coerceAtLeast(0)
+
+                    status.append(
+                        "PREBOLUS APPLY: ${"%.2f".format(before)}→" +
+                            "${"%.2f".format(commandedDose)}U " +
+                            "hybrid=${effectiveHybridPercentage}% " +
+                            preBolusController.debugString(now) + "\n"
+                    )
+                } else {
+                    status.append("PREBOLUS SKIP: commandedDose already >= chunk\n")
+                }
+            }
+
+        } else if (preBolusController.isActive(now)) {
+
+            // Alleen loggen als hij actief is maar NIET mag vuren
+            status.append(
+                "PREBOLUS HOLD: bg=${"%.2f".format(ctx.input.bgNow)} " +
+                    "zone=$zoneEnum pred60=${"%.2f".format(pred60)} " +
+                    "Δ5m=${"%.2f".format(ctx.recentDelta5m)} " +
+                    "slope=${"%.2f".format(ctx.recentSlope)}\n"
+            )
+        }
 
 
 

@@ -95,13 +95,13 @@ class MealIntentDialog : DialogFragmentWithDate() {
         val validUntilText = validUntil.toString("HH:mm")
 
         val payload =
-            "MEAL_INTENT:${type.name},PREBOLUS=${"%.1f".format(bolusU)}U,TTL=${ttl}m"
+            "MEAL_INTENT:${type.name},PREBOLUS=${"%.2f".format(bolusU)}U,TTL=${ttl}m"
 
         activity?.let { activity ->
             OKDialog.showConfirmation(
                 activity,
                 rh.gs(R.string.meal_intent_title),
-                "Pre-bolus: ${"%.1f".format(bolusU)} E\nGeldig tot $validUntilText",
+                "Pre-bolus: ${"%.2f".format(bolusU)} E\nGeldig tot $validUntilText",
                 {
                     MealIntentRepository.set(
                         type = type,
