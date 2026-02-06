@@ -547,5 +547,5 @@ Sterk: Insuline 50%, TT +2,5mmol max 35 minuten naijl\n
         <item>STRONG</item>
     </string-array>
 
-    <string name="meal_intent">Maaltijd</string>
+    <string name="meal_intent">Toon maaltijd knop</string>
 </resources>

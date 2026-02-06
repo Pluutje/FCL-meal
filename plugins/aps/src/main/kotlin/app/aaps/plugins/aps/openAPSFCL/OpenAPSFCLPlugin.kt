@@ -880,7 +880,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
                     summary = R.string.fcl_vnext_4_MEAL_summary
                 )
             )
-
+// Toon maaltijdknop
 
             addPreference(
                 AdaptiveSwitchPreference(

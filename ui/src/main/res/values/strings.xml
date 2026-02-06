@@ -182,7 +182,7 @@
     </string-array>
 
     <!--    Eigen-->
-    <string name="meal_intent_title">Toon maaltijdknop</string>
+    <string name="meal_intent_title">Maaltijd</string>
     <string name="meal_intent_description1">Geef aan wat je verwacht te gaan eten.</string>
     <string name="meal_intent_description2">Zodra het veilig kan wordt onderstaande bolus toegediend:</string>
     <string name="meal_intent_small">Klein</string>
@@ -190,14 +190,5 @@
     <string name="meal_intent_large">Groot</string>
 
 
-    <!--
-        <string name="meal_intent_confirm">%1$s\nGeldig tot %2$s (%3$d min)</string>
-        <string name="meal_intent_duration_title">Hoe lang geldt deze maaltijd?</string>
-
-        <string name="meal_intent_duration_30">30 minuten</string>
-        <string name="meal_intent_duration_60">60 minuten (standaard)</string>
-        <string name="meal_intent_duration_90">90 minuten</string>
-        <string name="meal_intent_duration_120">120 minuten</string>
-    -->
 
     </resources>
