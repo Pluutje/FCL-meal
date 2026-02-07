@@ -2056,6 +2056,8 @@ class FCLvNext(
         // 🍽️ MealIntent overlay (timing only, TTL-based)
         val now = DateTime.now()
         preBolusController.cleanupIfExpired(now)
+        preBolusController.applyDecay(now)
+
         val mealIntent =
             app.aaps.core.interfaces.meal.MealIntentRepository.get()
 
@@ -2067,6 +2069,7 @@ class FCLvNext(
                     MealIntentType.SMALL  -> preferences.get(DoubleKey.prebolus_small)
                     MealIntentType.NORMAL -> preferences.get(DoubleKey.prebolus_normal)
                     MealIntentType.LARGE  -> preferences.get(DoubleKey.prebolus_large)
+                    MealIntentType.SNACK  -> mealIntent.preBolusU ?: 0.0
                 }
         }
 
@@ -2098,6 +2101,7 @@ class FCLvNext(
                 MealIntentType.SMALL  -> preferences.get(DoubleKey.prebolus_small)
                 MealIntentType.NORMAL -> preferences.get(DoubleKey.prebolus_normal)
                 MealIntentType.LARGE  -> preferences.get(DoubleKey.prebolus_large)
+                MealIntentType.SNACK  -> mealIntent.preBolusU ?: 0.0
             }
 
             preBolusController.arm(
@@ -2249,12 +2253,18 @@ class FCLvNext(
         // ook als short-term ruis het maskeert
         // ─────────────────────────────────────────────
 
-
+        val allowDespiteLongSlope =
+            zoneEnum == BgZone.EXTREME &&
+            peak.state >= PeakPredictionState.WATCHING &&
+            ctx.recentSlope > 0.0
 
         val hardNoDelivery =
             downGate.pauseThisCycle ||
                 (
-                    ctx.slope <= -1.0 &&
+                    !allowDespiteLongSlope &&
+                        ctx.slope <= -1.0 &&
+                        ctx.recentSlope <= 0.0 &&
+                        ctx.recentDelta5m <= 0.0 &&
                         ctx.deltaToTarget <= 3.0 &&
                         ctx.consistency >= 0.55
                     )
@@ -3117,8 +3127,8 @@ class FCLvNext(
         // ─────────────────────────────────────────────
         // 🧯 DOWN-TREND FINAL DOSE GATE (last line of defense)
         // ─────────────────────────────────────────────
-        if (downGate.locked) {
-            status.append("DOWNTREND LOCKED: commandedDose forced to 0\n")
+        if (downGate.locked && mealSignal.state == MealState.NONE) {
+            status.append("DOWNTREND LOCKED (no-meal): commandedDose forced to 0\n")
             commandedDose = 0.0
             earlyConfirmDone = false
         }

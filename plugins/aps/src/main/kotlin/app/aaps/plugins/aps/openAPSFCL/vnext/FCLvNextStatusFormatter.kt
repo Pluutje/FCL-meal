@@ -71,6 +71,7 @@ class FCLvNextStatusFormatter(
             MealIntentType.SMALL  -> "Kleine maaltijd"
             MealIntentType.NORMAL -> "Normale maaltijd"
             MealIntentType.LARGE  -> "Grote maaltijd"
+            MealIntentType.SNACK  -> "Snack / Borrel"
             else                  -> "—"
         }
 
@@ -472,7 +473,7 @@ ${metricsText ?: "Nog geen data"}
 
         return """
 ════════════════════════
- 🧠 FCL meal V1 v1.1.0
+ 🧠 FCL meal V1 v1.2.3
 ════════════════════════
 • Profiel              : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}
 • Meal detect          : ${mealDetectLabel(prefs.get(StringKey.fcl_vnext_meal_detect_speed))}

@@ -63,15 +63,22 @@ class PreBolusController {
     ) {
         if (preBolusU <= 0.0) return
 
+        // 🔒 voorkom her-armen van dezelfde episode
+        if (
+            state.active &&
+            state.mealType == type &&
+            state.validUntil == validUntil
+        ) return
+
         state.active = true
         state.mealType = type
         state.totalU = preBolusU
         state.remainingU = preBolusU
-        state.armedAt = now              // 👈 TOEVOEGEN
+        state.armedAt = now
         state.validUntil = validUntil
         state.lastFireAt = null
-
     }
+
 
     fun reset() {
         state.active = false
@@ -92,10 +99,18 @@ class PreBolusController {
         return now.isAfter(until)
     }
 
+    // Logisch actief: kan nog insuline leveren
     fun isActive(now: DateTime): Boolean =
         state.active &&
             state.remainingU > 0.0 &&
             !isExpired(now)
+
+    // UI actief: episode loopt nog (TTL)
+    fun isUiActive(now: DateTime): Boolean =
+        state.active &&
+            state.validUntil != null &&
+            !now.isAfter(state.validUntil)
+
 
     fun remainingU(): Double = state.remainingU
 
@@ -149,6 +164,65 @@ class PreBolusController {
         }
     }
 
+    /**
+     * Laat prebolus langzaam aflopen als hij niet (volledig) wordt afgegeven.
+     *
+     * - Eerste gracePeriodMin minuten: geen decay
+     * - Daarna niet-lineaire afbouw richting TTL
+     * - Beperkt ALLEEN remainingU (nooit verhogen)
+     */
+    private fun graceMinutes(type: MealIntentType): Int = when (type) {
+        MealIntentType.SNACK  -> 45
+        MealIntentType.SMALL  -> 30
+        MealIntentType.NORMAL -> 40
+        MealIntentType.LARGE  -> 50
+    }
+
+
+    fun applyDecay(now: DateTime) {
+        if (!state.active) return
+
+        val armedAt = state.armedAt ?: return
+        val validUntil = state.validUntil ?: return
+        val type = state.mealType ?: return
+
+        if (now.isAfter(validUntil)) return
+
+        val minutesSinceArmed =
+            Minutes.minutesBetween(armedAt, now).minutes
+        if (minutesSinceArmed < 0) return
+
+        val totalMinutes =
+            Minutes.minutesBetween(armedAt, validUntil).minutes
+        if (totalMinutes <= 1) return
+
+        // 🟢 Grace per maaltijdtype, maar nooit ≥ TTL
+        val graceMin =
+            minOf(
+                graceMinutes(type),
+                totalMinutes - 1
+            ).coerceAtLeast(0)
+
+        // ⏳ Binnen grace: geen decay
+        if (minutesSinceArmed <= graceMin) return
+
+        val decayWindow = totalMinutes - graceMin
+        if (decayWindow <= 0) return
+
+        val t =
+            ((minutesSinceArmed - graceMin).toDouble() / decayWindow)
+                .coerceIn(0.0, 1.0)
+
+        // 🔻 Kwadratische afname: langzaam begin, sneller einde
+        val decayFactor = 1.0 - (t * t)
+
+        val maxAllowedRemaining =
+            (state.totalU * decayFactor).coerceAtLeast(0.0)
+
+        // ❗ Alleen reduceren, nooit verhogen
+        state.remainingU =
+            minOf(state.remainingU, maxAllowedRemaining)
+    }
 
 
     // ===============================
@@ -195,6 +269,7 @@ class PreBolusController {
     }
 
     fun uiSnapshot(now: DateTime): PreBolusSnapshot? {
+        if (!isUiActive(now)) return null
         val validUntil = state.validUntil ?: return null
         if (now.isAfter(validUntil)) return null
 

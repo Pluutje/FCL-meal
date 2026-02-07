@@ -24,6 +24,7 @@ private fun expectedMealScale(
         MealIntentType.SMALL  -> 1.0 * maxSmb
         MealIntentType.NORMAL -> 2.0 * maxSmb
         MealIntentType.LARGE  -> 3.0 * maxSmb
+        MealIntentType.SNACK  -> 1.0 * maxSmb
     }
 
 
@@ -63,10 +64,19 @@ fun computeMealIntentEffect(
 
 // verhouding prebolus t.o.v. "verwachte" hoeveelheid
     val coverage =
-        if (expected > 0.0)
-            (preBolusU / expected).coerceIn(0.0, 1.2)
-        else
-            0.0
+        when (intent.type) {
+            MealIntentType.SNACK -> {
+                val snackU = intent.preBolusU ?: 0.0
+                (snackU / maxSmb).coerceIn(0.0, 1.0)
+            }
+            else -> {
+                if (expected > 0.0)
+                    (preBolusU / expected).coerceIn(0.0, 1.2)
+                else
+                    0.0
+            }
+        }
+
 
 // assist: hoe minder coverage, hoe meer hulp
     val assistStrength =
