@@ -2,6 +2,7 @@ package app.aaps.plugins.aps.openAPSFCL.vnext
 
 
 import android.annotation.SuppressLint
+import app.aaps.core.interfaces.meal.MealIntentRepository
 import org.joda.time.DateTime
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.DoubleKey
@@ -11,10 +12,9 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextProfileParameterSna
 import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextCsvLogRow
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
 import app.aaps.core.interfaces.meal.MealIntentType
-import app.aaps.plugins.aps.openAPSFCL.vnext.meal.applyMealIntentToConfig
-import app.aaps.plugins.aps.openAPSFCL.vnext.meal.computeMealIntentEffect
 import app.aaps.plugins.aps.openAPSFCL.vnext.model.computeIobOvershootFactor
 import app.aaps.plugins.aps.openAPSFCL.vnext.model.clampDoseByIob
+import app.aaps.plugins.aps.openAPSFCL.vnext.meal.MealIntentOverlay
 
 import kotlin.math.roundToInt
 
@@ -103,6 +103,9 @@ private enum class DowntrendLock { OFF, LOCKED }
 private var downtrendLock: DowntrendLock = DowntrendLock.OFF
 private var downtrendConfirm: Int = 0
 private var plateauConfirm: Int = 0
+
+private var topPlateauConfirm: Int = 0
+private var topPlateauHold: Int = 0
 
 private data class DowntrendGate(
     val pauseThisCycle: Boolean,   // dipje → even pauze
@@ -1295,7 +1298,63 @@ private fun computeMicroRamp(ctx: FCLvNextContext, config: FCLvNextConfig, peak:
     )
 }
 
+private data class TopGuard(
+    val active: Boolean,
+    val capFactor: Double,   // 0..1 (hoe hard knijpen)
+    val reason: String
+)
 
+private fun computeTopGuard(
+    ctx: FCLvNextContext,
+    peak: PeakEstimate,
+    mealSignal: MealSignal,
+    config: FCLvNextConfig
+): TopGuard {
+
+    val reliable = ctx.consistency >= config.minConsistency
+
+    // Fast-lane plateau / topvorming (leidend!)
+    val fastPlateau =
+        ctx.recentSlope <= 0.30 &&
+            kotlin.math.abs(ctx.recentDelta5m) <= 0.04
+
+    // "dicht bij top": predictedPeak ligt niet veel hoger dan huidige BG
+    val nearPeak =
+        peak.predictedPeak >= 9.5 &&
+            (peak.predictedPeak - ctx.input.bgNow) <= 0.8
+
+    // afremmen begint, maar macro trend kan nog "positief" lijken
+    val braking =
+        ctx.acceleration <= 0.10 || ctx.recentSlope <= 0.15
+
+    // IOB al betekenisvol
+    val hasIob = ctx.iobRatio >= 0.30
+
+    val episodeLike =
+        mealSignal.state != MealState.NONE || peakEstimator.active || peak.state != PeakPredictionState.IDLE
+
+    val shouldGuard = reliable && episodeLike && hasIob && fastPlateau && (nearPeak || braking) && ctx.deltaToTarget >= 0.8
+
+    if (!shouldGuard) return TopGuard(false, 1.0, "TOPGUARD off")
+
+    // CapFactor: hoe harder als we dichter bij top zijn / meer IOB hebben
+    val iobSeverity = smooth01((ctx.iobRatio - 0.30) / 0.40)           // 0..1
+    val peakCloseness = invSmooth01(((peak.predictedPeak - ctx.input.bgNow) - 0.2) / (0.8 - 0.2)) // 0..1
+    val severity = (0.55 * iobSeverity + 0.45 * peakCloseness).coerceIn(0.0, 1.0)
+
+    val cap = (1.0 - 0.70 * severity).coerceIn(0.20, 0.65)  // hard knijpen: 20–65% over
+
+    return TopGuard(true, cap, "TOPGUARD: plateau+nearPeak (cap=${"%.2f".format(cap)})")
+}
+
+private fun deliveredInLastMinutes(now: DateTime, minutes: Int): Double {
+    val cutoff = now.minusMinutes(minutes)
+    var sum = 0.0
+    for ((t, u) in deliveryHistory) {
+        if (t.isAfter(cutoff) || t.isEqual(cutoff)) sum += u
+    }
+    return sum
+}
 
 
 private fun smooth01(x: Double): Double {
@@ -1956,7 +2015,8 @@ private fun heightEscalationFactor(
 
 class FCLvNext(
     private val preferences: Preferences,
-    private val preBolusController: PreBolusController
+    private val preBolusController: PreBolusController,
+    private val mealIntentOverlay: MealIntentOverlay   // ✅ NEW
 ) {
 
 
@@ -2055,11 +2115,10 @@ class FCLvNext(
 
         // 🍽️ MealIntent overlay (timing only, TTL-based)
         val now = DateTime.now()
-        preBolusController.cleanupIfExpired(now)
+
         preBolusController.applyDecay(now)
 
-        val mealIntent =
-            app.aaps.core.interfaces.meal.MealIntentRepository.get()
+        val mealIntent = MealIntentRepository.get()
 
         var preBolusUForAssist = 0.0
 
@@ -2074,26 +2133,33 @@ class FCLvNext(
         }
 
 
-        val mealIntentEffect = computeMealIntentEffect(
-                now = now,
-                maxSmb = config.maxSMB,
-                preBolusU = preBolusUForAssist
-            )
+        // decay wordt bijgehouden door PreBolusController
+        val pbSnap = preBolusController.snapshot(now)
+        val decay = pbSnap?.decayFactor ?: 1.0
 
+        val mealIntentEffect = mealIntentOverlay.computeEffect(
+            now = now,
+            maxSmb = config.maxSMB,
+            preBolusU = preBolusUForAssist,
+            decayFactor = decay
+        )
 
-        config = applyMealIntentToConfig(
-                base = config,
-                effect = mealIntentEffect
-            )
+        config = mealIntentOverlay.applyToConfig(
+            base = config,
+            effect = mealIntentEffect
+        )
+
 
         // ─────────────────────────────────────────────
         // 🍽️ PRE-BOLUS ARM (via MealIntentRepository)
         // ─────────────────────────────────────────────
 
 
+        val pbUi = preBolusController.uiSnapshot(now)
+
         if (
             mealIntent != null &&
-            preBolusController.validUntil()?.millis != mealIntent.validUntil
+            (pbUi == null || pbUi.validUntil != mealIntent.validUntil)
         ) {
             val type = mealIntent.type
 
@@ -2106,10 +2172,11 @@ class FCLvNext(
 
             preBolusController.arm(
                 type = type,
-                preBolusU = preBolusU,
+                totalU = preBolusU,
                 validUntil = DateTime(mealIntent.validUntil),
                 now = now
             )
+
 
             status.append(
                 "PREBOLUS ARMED: ${type} ${"%.2f".format(preBolusU)}U " +
@@ -2253,10 +2320,11 @@ class FCLvNext(
         // ook als short-term ruis het maskeert
         // ─────────────────────────────────────────────
 
+        val watchingOrConfirmed =
+            (peak.state == PeakPredictionState.WATCHING || peak.state == PeakPredictionState.CONFIRMED)
+
         val allowDespiteLongSlope =
-            zoneEnum == BgZone.EXTREME &&
-            peak.state >= PeakPredictionState.WATCHING &&
-            ctx.recentSlope > 0.0
+            zoneEnum == BgZone.EXTREME && watchingOrConfirmed && ctx.recentSlope > 0.0
 
         val hardNoDelivery =
             downGate.pauseThisCycle ||
@@ -2830,13 +2898,34 @@ class FCLvNext(
 
                 val prePeakMul = if (prePeakCommitWindow) 0.85 else 1.0
 
+
+                val nearPeak =
+                    peak.predictedPeak >= 9.5 &&
+                        (peak.predictedPeak - ctx.input.bgNow) <= 0.8
+
+                val braking =
+                    ctx.acceleration <= 0.10 ||
+                        ctx.recentSlope <= 0.15
+
+                val rawPlateauPenalty =
+                    if ((nearPeak || braking) &&
+                        ctx.recentDelta5m <= 0.02 &&
+                        ctx.recentSlope <= 0.20 &&
+                        ctx.iobRatio >= 0.25
+                    ) {
+                        val sev = smooth01((ctx.iobRatio - 0.25) / 0.35)
+                        (1.0 - 0.75 * sev).coerceIn(0.25, 0.85)
+                    } else 1.0
+
+
+                if (rawPlateauPenalty < 1.0) status.append("COMMIT rawPlateauPenalty=${"%.2f".format(rawPlateauPenalty)}\n")
+
+
                 val commitDose =
                     if (allowCommitBoost && commitAccessOk)
-                        (config.maxSMB * fraction * commitIobFactor * prePeakMul * postPeak.commitFactor)
+                        (config.maxSMB * fraction * commitIobFactor * prePeakMul * postPeak.commitFactor * rawPlateauPenalty)
                             .coerceAtMost(config.maxSMB)
                     else 0.0
-
-
 
 
 
@@ -3069,8 +3158,26 @@ class FCLvNext(
             }
         }
 
+// ── TOP PLATEAU CONFIRM (hysterese) ──
+        val plateauNow =
+            ctx.recentSlope <= 0.30 && kotlin.math.abs(ctx.recentDelta5m) <= 0.04
 
+        val risingAgainNow =
+            ctx.recentDelta5m >= 0.06 || ctx.recentSlope >= 0.20
 
+        if (risingAgainNow) {
+            // zodra fast lane weer stijgt: meteen reset → voorkomt “te laat weer gas”
+            topPlateauConfirm = 0
+            topPlateauHold = 0
+        } else if (plateauNow) {
+            topPlateauConfirm = (topPlateauConfirm + 1).coerceAtMost(5)
+            topPlateauHold = 2  // houd 2 cycles vast als we eenmaal plateau zagen
+        } else {
+            // geen plateau, maar hold kan nog even doorlopen
+            if (topPlateauHold > 0) topPlateauHold--
+            if (topPlateauHold == 0) topPlateauConfirm = 0
+        }
+        val topPlateauConfirmed = topPlateauConfirm >= 2 || topPlateauHold > 0
 
 // ─────────────────────────────────────────────
 // HARD SAFETY BLOCKS (final gate before delivery)
@@ -3086,6 +3193,68 @@ class FCLvNext(
             commandedDose = 0.0
             earlyConfirmDone = false
         }
+
+        val topGuard =
+            if (topPlateauConfirmed) computeTopGuard(ctx, peak, mealSignal, config)
+            else TopGuard(false, 1.0, "TOPGUARD off (not confirmed)")
+        if (topGuard.active && commandedDose > 0.0) {
+            val before = commandedDose
+            commandedDose = minOf(commandedDose, config.maxSMB * topGuard.capFactor)
+            status.append("${topGuard.reason}: ${"%.2f".format(before)}→${"%.2f".format(commandedDose)}U\n")
+        }
+
+        // 10-min burst cap (exclude prebolus-active because that's user-intent chunking)
+        if (!preBolusActive && commandedDose > 0.0) {
+
+            val delivered10m = deliveredInLastMinutes(now, 10)
+
+            // basis cap: max ~1.1×maxSMB per 10m
+            // maar iets ruimer als BG echt hoog is (zone HIGH/EXTREME) én we nog niet plateau zijn
+            val fastPlateau =
+                ctx.recentSlope <= 0.30 && kotlin.math.abs(ctx.recentDelta5m) <= 0.04
+
+            val highRoom = if ((zoneEnum == BgZone.HIGH || zoneEnum == BgZone.EXTREME) && !fastPlateau) 1.45 else 1.10
+            val cap10m = highRoom * config.maxSMB
+
+            val remaining = (cap10m - delivered10m).coerceAtLeast(0.0)
+
+            // Detecteer hernieuwde duidelijke stijging
+            val risingAgain =
+                ctx.recentDelta5m >= 0.08 || ctx.recentSlope >= 0.30
+
+            if (remaining <= 0.02) {
+                val midOrHigher = (zoneEnum == BgZone.MID || zoneEnum == BgZone.HIGH || zoneEnum == BgZone.EXTREME)
+                if (risingAgain && midOrHigher && ctx.deltaToTarget >= 1.0) {
+
+                    // Sta beperkte her-acquire toe ondanks burstcap
+                    val reacquire =
+                        (0.25 * config.maxSMB)
+                            .coerceAtLeast(0.10)
+                            .coerceAtMost(0.35)
+
+                    val before = commandedDose
+                    commandedDose = minOf(commandedDose, reacquire)
+
+                    status.append(
+                        "BURSTCAP REACQUIRE: risingAgain → " +
+                            "${"%.2f".format(before)}→${"%.2f".format(commandedDose)}U\n"
+                    )
+
+                } else {
+
+                    status.append(
+                        "BURSTCAP: delivered10m=${"%.2f".format(delivered10m)}U " +
+                            ">= cap10m=${"%.2f".format(cap10m)}U → commandedDose=0\n"
+                    )
+
+                    commandedDose = 0.0
+                    earlyConfirmDone = false
+                }
+            }
+
+        }
+
+
 
         // ─────────────────────────────────────────────
         // 🛡️ IOB HARD CAP + DYNAMIC OVERSHOOT (EXCL. PREBOLUS)
@@ -3137,12 +3306,11 @@ class FCLvNext(
         // 🍽️ PRE-BOLUS OVERRIDE (chunked, vóór delivery)
         // ─────────────────────────────────────────────
         var effectiveHybridPercentage = config.hybridPercentage
-        var preBolusFiredThisCycle = false
-        var preBolusPlannedChunkU = 0.0
 
 
         val preBolusFireAllowed =
             preBolusController.isActive(now) &&
+                MealIntentRepository.get() != null &&
                 zoneEnum != BgZone.LOW &&
                 ctx.input.bgNow >= 4.4 &&
           //      pred60 >= 4.2 &&
@@ -3158,17 +3326,22 @@ class FCLvNext(
 
                 if (after > before + 1e-9) {
                     commandedDose = after
-                    preBolusController.consumePlannedChunk(chunk, now)
+                    preBolusController.consumePlannedChunk(chunk)
 
                     effectiveHybridPercentage =
                         (config.hybridPercentage - 20).coerceAtLeast(0)
 
+                    val pb = preBolusController.snapshot(now)
                     status.append(
                         "PREBOLUS APPLY: ${"%.2f".format(before)}→" +
                             "${"%.2f".format(commandedDose)}U " +
                             "hybrid=${effectiveHybridPercentage}% " +
-                            preBolusController.debugString(now) + "\n"
+                            (pb?.let {
+                                "PREBOLUS: ${it.mealType} remaining=${"%.2f".format(it.remainingU)}U validFor=${it.minutesRemaining}m"
+                            } ?: "PREBOLUS: inactive") +
+                            "\n"
                     )
+
                 } else {
                     status.append("PREBOLUS SKIP: commandedDose already >= chunk\n")
                 }

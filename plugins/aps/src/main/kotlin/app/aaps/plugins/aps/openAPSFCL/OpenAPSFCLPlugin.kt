@@ -862,7 +862,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
         }
 
         // =================================================
-        // 1️⃣ ALGEMEEN GEDRAG
+        // 1️⃣ Maaltijden
         // =================================================
         val MEAL_INTENT = preferenceManager.createPreferenceScreen(context).apply {
             key = "FCLvNextMeal"
@@ -896,6 +896,14 @@ open class OpenAPSFCLPlugin @Inject constructor(
                     title = R.string.prebolus_small_title
                 )
             )
+            addPreference(
+                AdaptiveDoublePreference(
+                    ctx = context,
+                    doubleKey = DoubleKey.fcl_vnext_meal_strength_small,
+                    dialogMessage = R.string.fcl_vnext_meal_strength_small_summary,
+                    title = R.string.fcl_vnext_meal_strength_small_title
+                )
+            )
 
             addPreference(
                 AdaptiveDoublePreference(
@@ -903,6 +911,14 @@ open class OpenAPSFCLPlugin @Inject constructor(
                     doubleKey = DoubleKey.prebolus_normal,
                     dialogMessage = R.string.prebolus_normal_summary,
                     title = R.string.prebolus_normal_title
+                )
+            )
+            addPreference(
+                AdaptiveDoublePreference(
+                    ctx = context,
+                    doubleKey = DoubleKey.fcl_vnext_meal_strength_normal,
+                    dialogMessage = R.string.fcl_vnext_meal_strength_normal_summary,
+                    title = R.string.fcl_vnext_meal_strength_normal_title
                 )
             )
 
@@ -914,8 +930,22 @@ open class OpenAPSFCLPlugin @Inject constructor(
                     title = R.string.prebolus_large_title
                 )
             )
-
-
+            addPreference(
+                AdaptiveDoublePreference(
+                    ctx = context,
+                    doubleKey = DoubleKey.fcl_vnext_meal_strength_large,
+                    dialogMessage = R.string.fcl_vnext_meal_strength_large_summary,
+                    title = R.string.fcl_vnext_meal_strength_large_title
+                )
+            )
+            addPreference(
+                AdaptiveDoublePreference(
+                    ctx = context,
+                    doubleKey = DoubleKey.fcl_vnext_meal_strength_snack,
+                    dialogMessage = R.string.fcl_vnext_meal_strength_snack_summary,
+                    title = R.string.fcl_vnext_meal_strength_snack_title
+                )
+            )
 
         }
 

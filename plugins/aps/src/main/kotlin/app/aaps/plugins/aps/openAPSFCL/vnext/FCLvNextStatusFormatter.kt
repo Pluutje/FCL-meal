@@ -128,8 +128,10 @@ class FCLvNextStatusFormatter(
 • Gegeven     : ${"%.2f".format(snapshot.deliveredU)} U
 • Resterend   : ${"%.2f".format(snapshot.remainingU)} U
 • Gestart     : ${snapshot.minutesSinceArmed} min geleden
-• Geldig tot  : ${snapshot.validUntil.toString("HH:mm")}
+• Geldig tot  : ${DateTime(snapshot.validUntil).toString("HH:mm")}
   (nog ${snapshot.minutesRemaining} min)
+• Verval      : ${"%.2f".format(snapshot.decayFactor)}
+
 """.trimIndent()
     }
 
@@ -333,7 +335,10 @@ Nog geen observaties beschikbaar
         sb.append("📚 LEARNING\n")
         sb.append("─────────────────────\n")
         sb.append("• Status        : ${humanLearningStatus(snapshot.status)}\n")
-        sb.append("• Episodes      : ${snapshot.totalEpisodes}\n")
+        val totalEvidence = snapshot.axes.sumOf { it.episodesSeen }
+        sb.append("• Episodes (sessie) : ${snapshot.totalEpisodes}\n")
+        sb.append("• Evidence (buckets): $totalEvidence\n")
+
         sb.append("• Delivery conf : ${"%.2f".format(snapshot.deliveryConfidence)}\n")
         sb.append("• Laatste check : ${snapshot.createdAt.toString("HH:mm:ss")}\n")
 
@@ -363,54 +368,50 @@ Nog geen observaties beschikbaar
 
 
         // ── AXES ────────────────────────────────
-        snapshot.axes.forEach { axis ->
-            sb.append("\n${axis.axis}\n")
-            sb.append("─────────────────────\n")
+            snapshot.axes.forEach { axis ->
+                sb.append("\n${axis.axis}\n")
+                sb.append("─────────────────────\n")
 
-            val total = snapshot.totalEpisodes.toInt()
-            val nonOk = axis.episodesSeen
-            val ok = (total - nonOk).coerceAtLeast(0)
-
-            val statusText = when (axis.status) {
-                AxisStatus.NO_DIRECTION -> "nog geen richting"
-                AxisStatus.WEAK_SIGNAL -> "zwak signaal"
-                AxisStatus.STRUCTURAL_SIGNAL -> "structureel signaal"
-            }
-
-            sb.append("• ${statusText}\n")
-
-            val details = mutableListOf<String>()
-
-            if (ok > 0 && nonOk > 0) {
-                details.add("${ok}× OK")
-            }
-
-            axis.percentages
-                .toList()
-                .sortedByDescending { it.second }
-                .forEach { (outcome, pct) ->
-                    val count =
-                        ((pct / 100.0) * nonOk)
-                            .toInt()
-                            .coerceAtLeast(1)
-                    details.add("${count}× ${outcome.name}")
+                val statusText = when (axis.status) {
+                    AxisStatus.NO_DIRECTION -> "nog geen richting"
+                    AxisStatus.WEAK_SIGNAL -> "zwak signaal"
+                    AxisStatus.STRUCTURAL_SIGNAL -> "structureel signaal"
                 }
 
-            if (details.isNotEmpty()) {
-                sb.append("  (")
-                    .append(details.joinToString(", "))
-                    .append(")\n")
+                sb.append("• $statusText\n")
+                sb.append("• Evidence      : ${axis.episodesSeen}\n")
+
+                // Toon max 3 sterkste outcomes met percentage (géén fake counts)
+                val topOutcomes =
+                    axis.percentages
+                        .toList()
+                        .sortedByDescending { it.second }
+                        .take(3)
+
+                if (topOutcomes.isNotEmpty()) {
+                    sb.append("  (")
+                    sb.append(
+                        topOutcomes.joinToString(", ") { (outcome, pct) ->
+                            "${outcome.name} ${"%.0f".format(pct)}%"
+                        }
+                    )
+                    sb.append(")\n")
+                }
+
+                if (axis.dominantOutcome != null &&
+                    axis.status != AxisStatus.NO_DIRECTION
+                ) {
+                    sb.append(
+                        "  ↳ dominant: ${axis.dominantOutcome} " +
+                            "(conf ${"%.2f".format(axis.dominantConfidence)})\n"
+                    )
+                }
+
+                axis.lastEpisodeAt?.let { ts ->
+                    sb.append("  ↳ laatst gezien: ${ts.toString("HH:mm")}\n")
+                }
             }
 
-            if (axis.dominantOutcome != null &&
-                axis.status != AxisStatus.NO_DIRECTION
-            ) {
-                sb.append(
-                    "  ↳ dominant: ${axis.dominantOutcome} " +
-                        "(conf ${"%.2f".format(axis.dominantConfidence)})\n"
-                )
-            }
-        }
 
         return sb.toString().trimEnd()
     }
@@ -469,11 +470,12 @@ ${resistanceLog ?: "Geen resistentie-log"}
 ${metricsText ?: "Nog geen data"}
 """.trimIndent()
 
-        // Huidige versie FCL V3
+        // Huidige versie FCL V4
 
         return """
 ════════════════════════
- 🧠 FCL meal V1 v1.2.3
+ 🧠 FCL meal V4 v1.0.0
+ 
 ════════════════════════
 • Profiel              : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}
 • Meal detect          : ${mealDetectLabel(prefs.get(StringKey.fcl_vnext_meal_detect_speed))}

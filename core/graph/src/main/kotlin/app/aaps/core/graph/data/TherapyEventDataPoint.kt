@@ -9,6 +9,7 @@ import app.aaps.core.interfaces.profile.ProfileUtil
 import app.aaps.core.interfaces.resources.ResourceHelper
 import app.aaps.core.interfaces.utils.Translator
 
+
 class TherapyEventDataPoint(
     val data: TE,
     private val rh: ResourceHelper,

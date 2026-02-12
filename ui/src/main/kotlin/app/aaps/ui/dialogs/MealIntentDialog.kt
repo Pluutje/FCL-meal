@@ -96,7 +96,7 @@ class MealIntentDialog : DialogFragmentWithDate() {
 
     private fun updateUI(type: MealIntentType) {
 
-        binding.mealHint.text = type.uiLabel()
+        binding.mealHint.text = type.uiDescription()
 
         binding.snackOptions.visibility =
             if (type == MealIntentType.SNACK) View.VISIBLE else View.GONE

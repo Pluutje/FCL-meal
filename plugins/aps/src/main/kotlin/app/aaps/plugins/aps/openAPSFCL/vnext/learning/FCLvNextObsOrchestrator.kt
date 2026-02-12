@@ -219,11 +219,18 @@ class FCLvNextObsOrchestrator(
                 )
             }
 
+        val total = episodeTracker.totalEpisodes()
+
         val snapshotStatus =
-            if (axisSnapshots.any { it.status == AxisStatus.STRUCTURAL_SIGNAL })
-                SnapshotStatus.SIGNAL_PRESENT
-            else
-                SnapshotStatus.OBSERVING
+            when {
+                total <= 0L ->
+                    SnapshotStatus.INIT
+                axisSnapshots.any { it.status == AxisStatus.STRUCTURAL_SIGNAL } ->
+                    SnapshotStatus.SIGNAL_PRESENT
+                else ->
+                    SnapshotStatus.OBSERVING
+            }
+
 
         val last = finishedEpisodes.firstOrNull()
 
@@ -241,7 +248,7 @@ class FCLvNextObsOrchestrator(
         lastSnapshot =
             FCLvNextObsSnapshot(
                 createdAt = now,
-                totalEpisodes = episodeTracker.totalEpisodes(),
+                totalEpisodes = total,
                 activeEpisode = episodeTracker.hasActiveEpisode(),
                 activeEpisodeStartedAt = episodeTracker.activeEpisodeStart(),
                 deliveryConfidence = lastDeliveryConfidence,

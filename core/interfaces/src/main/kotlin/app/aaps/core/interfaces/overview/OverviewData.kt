@@ -116,4 +116,7 @@ interface OverviewData {
     var stepsForScale: Scale
     var stepsCountGraphSeries: SeriesData
 
+
+
+
 }

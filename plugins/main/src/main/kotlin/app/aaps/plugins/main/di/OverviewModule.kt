@@ -14,6 +14,8 @@ import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.android.ContributesAndroidInjector
+import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
+
 
 @Module(
     includes = [
@@ -35,8 +37,9 @@ abstract class OverviewModule {
         fun providesGraphData(
             profileFunction: ProfileFunction,
             preferences: Preferences,
-            rh: ResourceHelper
-        ): GraphData = GraphData(profileFunction, preferences, rh)
+            rh: ResourceHelper,
+            preBolusController: PreBolusController
+        ): GraphData = GraphData(profileFunction, preferences, rh, preBolusController)
     }
 
     @Module

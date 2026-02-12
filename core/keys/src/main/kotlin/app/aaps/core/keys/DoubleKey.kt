@@ -67,4 +67,9 @@ enum class DoubleKey(
     fcl_vnext_gain_night("fcl_vnext_gain_night", 0.7,0.2,1.5),
     fcl_vnext_MaxIOB("fcl_vnext_MaxIOB", 4.0,1.0,25.0),
 
+    fcl_vnext_meal_strength_small("fcl_vnext_meal_strength_small", 0.90, 0.75, 1.25),
+    fcl_vnext_meal_strength_normal("fcl_vnext_meal_strength_normal", 1.00, 0.75, 1.25),
+    fcl_vnext_meal_strength_large("fcl_vnext_meal_strength_large", 1.15, 0.75, 1.25),
+    fcl_vnext_meal_strength_snack("fcl_vnext_meal_strength_snack", 0.85, 0.75, 1.25),
+
 }

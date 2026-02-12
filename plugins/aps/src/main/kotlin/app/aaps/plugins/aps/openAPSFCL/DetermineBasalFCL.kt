@@ -61,6 +61,7 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsBgProviderAdapt
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsInsulinDeliveryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsLearningStore
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
+import app.aaps.plugins.aps.openAPSFCL.vnext.meal.MealIntentOverlay
 
 @Singleton
 
@@ -71,7 +72,7 @@ class DetermineBasalFCL @Inject constructor(
     private val dateUtil: DateUtil,
     private val persistenceLayer: PersistenceLayer,
     private val context: Context,
-
+    private val mealIntentOverlay: MealIntentOverlay
 ) {
 
     private val fclMetrics = FCLMetrics(context = context,preferences = preferences,persistenceLayer = persistenceLayer)
@@ -81,7 +82,12 @@ class DetermineBasalFCL @Inject constructor(
     private val bgHistoryProvider = FCLvNextBgHistoryProvider(persistenceLayer)
 
     private val preBolusController = PreBolusController()
-    private val fclvNext = FCLvNext(preferences, preBolusController)
+    private val fclvNext =
+        FCLvNext(
+            preferences = preferences,
+            preBolusController = preBolusController,
+            mealIntentOverlay = mealIntentOverlay   // ✅ doorgeven
+        )
 
     private val obsInsulinProvider =
         FCLvNextObsInsulinDeliveryProvider(

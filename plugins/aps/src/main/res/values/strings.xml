@@ -223,7 +223,7 @@
 
 
     <!--    FCL vNext -->
-    <string name="openaps_fcl">FCL v3</string>
+    <string name="openaps_fcl">FCL v4</string>
 
 
 
@@ -235,6 +235,17 @@
     <string name="max_bolus_day_summary">Maximale hoeveelheid insuline die FCL vNext in één actie overdag mag toedienen.\nBeperkt risico bij foutdetectie of ruis.</string>
     <string name="max_bolus_night_title">Maximale bolus nacht</string>
     <string name="max_bolus_night_summary">Maximale hoeveelheid insuline die FCL vNext ’s nachts in één actie mag toedienen.\nExtra bescherming tegen nachtelijke hypo’s.</string>
+
+    <string name="fcl_vnext_meal_strength_small_title">Maaltijdkracht – Klein</string>
+    <string name="fcl_vnext_meal_strength_small_summary">Versterkt of verzwakt FCL vNext bij een kleine maaltijd.\n1.0 = standaard.\nHoger = sneller en krachtiger reageren.\nLager = behoudender gedrag.</string>
+
+    <string name="fcl_vnext_meal_strength_normal_title">Maaltijdkracht – Normaal</string>
+    <string name="fcl_vnext_meal_strength_normal_summary">Versterkt of verzwakt FCL vNext bij een normale maaltijd.\n1.0 = standaard.\nHoger = sneller en krachtiger reageren.\nLager = behoudender gedrag.</string>
+    <string name="fcl_vnext_meal_strength_large_title">Maaltijdkracht – Groot</string>
+    <string name="fcl_vnext_meal_strength_large_summary">Versterkt of verzwakt FCL vNext bij een grote maaltijd.\n1.0 = standaard.\nHoger = sneller en krachtiger reageren.\nLager = behoudender gedrag.</string>
+    <string name="fcl_vnext_meal_strength_snack_title">Maaltijdkracht – Snack</string>
+    <string name="fcl_vnext_meal_strength_snack_summary">FCL-reactie bij langdurig snacken of kleine koolhydraat-inname.\nLager = subtielere micro-correcties.\nHoger = sneller ingrijpen bij opstapeling.</string>
+
 
     <string name="fcl_vnext_MaxIOB_summary">Maximale hoeveelheid acitieve insuline die aanwezig kan zijn.</string>
     <string name="fcl_vnext_MaxIOB_title">Maximaal IOB</string>

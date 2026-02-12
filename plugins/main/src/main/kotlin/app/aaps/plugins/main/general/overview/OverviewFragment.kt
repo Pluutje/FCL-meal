@@ -42,6 +42,8 @@ import app.aaps.core.interfaces.iob.IobCobCalculator
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
 import app.aaps.core.interfaces.logging.UserEntryLogger
+import app.aaps.core.interfaces.meal.MealIntentRepository
+import app.aaps.core.interfaces.meal.MealIntentType
 import app.aaps.core.interfaces.nsclient.NSSettingsStatus
 import app.aaps.core.interfaces.nsclient.ProcessedDeviceStatusData
 import app.aaps.core.interfaces.overview.LastBgData
@@ -116,6 +118,7 @@ import com.jjoe64.graphview.GraphView
 import dagger.android.support.DaggerFragment
 import io.reactivex.rxjava3.disposables.CompositeDisposable
 import io.reactivex.rxjava3.kotlin.plusAssign
+import org.joda.time.DateTime
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -123,6 +126,7 @@ import javax.inject.Provider
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
+import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
 
 
 class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickListener {
@@ -165,6 +169,7 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
     @Inject lateinit var graphDataProvider: Provider<GraphData>
     @Inject lateinit var commandQueue: CommandQueue
     @Inject lateinit var tirCalculator: TirCalculator
+    @Inject lateinit var preBolusController: PreBolusController
 
     private val disposable = CompositeDisposable()
 
@@ -1131,6 +1136,46 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
         graphData.setNumVerticalLabels()
         graphData.formatAxis(overviewData.fromTime, overviewData.endTime)
 
+
+
+
+      //  val snapshot = preBolusController.uiSnapshot(DateTime.now())
+        val snapshot = MealIntentRepository.getPreBolusSnapshot()
+
+        val decayFactor = snapshot?.decayFactor ?: 0.0
+        MealIntentRepository.get()?.let { mealIntent ->
+            val popupText =
+                if (snapshot != null) {
+                    buildString {
+
+                        append("Afgegeven: ${"%.2f".format(snapshot.deliveredU)} U\n")
+                        append("Resterend: ${"%.2f".format(snapshot.remainingU)} U\n")
+                        append("Looptijd: nog ${snapshot.minutesRemaining} min\n")
+                        append("Decay: ${"%.2f".format(snapshot.decayFactor)}")
+
+                    }
+                } else {
+                    "${mealIntent.type.uiDescription().trim()}\n" +
+                        "Geldig tot: ${DateTime(mealIntent.validUntil).toString("HH:mm")}"
+                }
+
+
+            graphData.addMealIntent(
+                requireContext(),
+                GraphData.MealIntentVisual(
+                    startTime = mealIntent.timestamp,
+                    endTime = mealIntent.validUntil,
+                    label = mealIntent.type.bandLabel(),
+                    popupText = popupText
+                ),
+                decayFactor = decayFactor,
+                type = mealIntent.type
+            )
+        }
+
+
+
+
         graphData.performUpdate()
 
         // 2nd graphs
@@ -1200,6 +1245,9 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
                 ).toVisibility()
             secondaryGraphsData[g].performUpdate()
         }
+
+
+
     }
 
     private fun updateCalcProgress() {

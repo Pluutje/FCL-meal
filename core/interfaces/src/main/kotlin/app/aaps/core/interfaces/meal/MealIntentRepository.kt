@@ -1,5 +1,6 @@
 package app.aaps.core.interfaces.meal
 
+import org.joda.time.DateTime
 import java.util.concurrent.atomic.AtomicReference
 
 object MealIntentRepository {
@@ -13,7 +14,48 @@ object MealIntentRepository {
         val customTtlMinutes: Int? = null
     )
 
+    data class PreBolusSnapshot(
+        val mealType: MealIntentType,
+
+        // doses
+        val totalU: Double,
+        val deliveredU: Double,
+        val remainingU: Double,
+
+        // tijdstempels (ENIGE waarheid = millis)
+        val armedAt: Long,
+        val validUntil: Long,
+
+        // afgeleid
+        val minutesSinceArmed: Int,
+        val minutesRemaining: Int,
+
+        // verval
+        val decayFactor: Double,
+
+        // UI-status
+        val status: UiStatus
+    )
+
+
+    enum class UiStatus {
+        ACTIVE,        // loopt nog (remainingU > 0)
+        DELIVERED,     // alles afgegeven, TTL loopt nog
+        EXPIRED        // TTL voorbij
+    }
+
     private val current = AtomicReference<MealIntent?>()
+
+    private val preBolusSnapshot =
+        AtomicReference<PreBolusSnapshot?>()
+
+    fun setPreBolusSnapshot(snapshot: PreBolusSnapshot?) {
+        preBolusSnapshot.set(snapshot)
+    }
+
+    fun getPreBolusSnapshot(): PreBolusSnapshot? =
+        preBolusSnapshot.get()
+
 
     fun set(
         type: MealIntentType,

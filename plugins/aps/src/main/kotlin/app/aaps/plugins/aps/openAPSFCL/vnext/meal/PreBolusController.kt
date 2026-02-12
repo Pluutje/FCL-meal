@@ -1,69 +1,52 @@
 package app.aaps.plugins.aps.openAPSFCL.vnext.meal
 
+import app.aaps.core.interfaces.meal.MealIntentRepository
 import app.aaps.core.interfaces.meal.MealIntentType
+import app.aaps.core.interfaces.meal.MealIntentRepository.PreBolusSnapshot
+import app.aaps.core.interfaces.meal.MealIntentRepository.UiStatus
 import org.joda.time.DateTime
 import org.joda.time.Minutes
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlin.math.min
 
-/**
- * Beheert een expliciet ingestelde pre-bolus:
- * - wordt ge-armed bij MealIntent
- * - blijft actief tot validUntil of remainingU == 0
- * - levert in chunks (maxSMB)
- *
- * GEEN BG / IOB / safety kennis.
- * Dat blijft volledig in FCLvNext.
- */
-data class PreBolusSnapshot(
-    val mealType: MealIntentType,
-    val totalU: Double,
-    val deliveredU: Double,
-    val remainingU: Double,
-    val armedAt: DateTime,
-    val validUntil: DateTime,
-    val minutesSinceArmed: Int,
-    val minutesRemaining: Int
-)
+@Singleton
+class PreBolusController @Inject constructor() {
 
-
-class PreBolusController {
 
     // ===============================
     // Interne state
     // ===============================
-    private data class PreBolusState(
+    private data class State(
         var active: Boolean = false,
         var mealType: MealIntentType? = null,
 
         var totalU: Double = 0.0,
+        var deliveredU: Double = 0.0,
         var remainingU: Double = 0.0,
 
-        var armedAt: DateTime? = null,      // 👈 TOEVOEGEN
-        var lastFireAt: DateTime? = null,
+        var armedAt: DateTime? = null,
+        var validUntil: DateTime? = null,
 
-        // absolute expiry (leidend)
-        var validUntil: DateTime? = null
+        // decay bookkeeping
+        var decayStarted: Boolean = false,
+        var remainingAtDecayStart: Double = 0.0
     )
 
-
-    private val state = PreBolusState()
+    private val state = State()
 
     // ===============================
     // Arm / reset
     // ===============================
-
-    /**
-     * Arm met absolute geldigheid (validUntil).
-     * TTL wordt upstream bepaald (UI) en in repository al vertaald naar validUntil.
-     */
     fun arm(
         type: MealIntentType,
-        preBolusU: Double,
+        totalU: Double,
         validUntil: DateTime,
         now: DateTime
     ) {
-        if (preBolusU <= 0.0) return
+        if (totalU <= 0.0) return
 
-        // 🔒 voorkom her-armen van dezelfde episode
+        // voorkom her-armen van exact dezelfde episode
         if (
             state.active &&
             state.mealType == type &&
@@ -72,228 +55,197 @@ class PreBolusController {
 
         state.active = true
         state.mealType = type
-        state.totalU = preBolusU
-        state.remainingU = preBolusU
+
+        state.totalU = totalU
+        state.deliveredU = 0.0
+        state.remainingU = totalU
+
         state.armedAt = now
         state.validUntil = validUntil
-        state.lastFireAt = null
-    }
 
+        state.decayStarted = false
+        state.remainingAtDecayStart = 0.0
+    }
 
     fun reset() {
         state.active = false
         state.mealType = null
         state.totalU = 0.0
+        state.deliveredU = 0.0
         state.remainingU = 0.0
-        state.armedAt = null        // 👈 TOEVOEGEN
+        state.armedAt = null
         state.validUntil = null
-        state.lastFireAt = null
+        state.decayStarted = false
+        state.remainingAtDecayStart = 0.0
     }
 
     // ===============================
-    // Status / geldigheid
+    // Geldigheid
     // ===============================
-
-    fun isExpired(now: DateTime): Boolean {
-        val until = state.validUntil ?: return true
-        return now.isAfter(until)
-    }
-
-    // Logisch actief: kan nog insuline leveren
     fun isActive(now: DateTime): Boolean =
         state.active &&
             state.remainingU > 0.0 &&
             !isExpired(now)
 
-    // UI actief: episode loopt nog (TTL)
     fun isUiActive(now: DateTime): Boolean =
         state.active &&
             state.validUntil != null &&
             !now.isAfter(state.validUntil)
 
+    fun isExpired(now: DateTime): Boolean =
+        state.validUntil?.let { now.isAfter(it) } ?: true
 
-    fun remainingU(): Double = state.remainingU
+    fun stopMealIntent() {
 
-    fun mealType(): MealIntentType? = state.mealType
+        // 1️⃣ Repository leegmaken
+        MealIntentRepository.clear()
 
-    fun validUntil(): DateTime? = state.validUntil
+        // 2️⃣ Snapshot ook leegmaken
+        MealIntentRepository.setPreBolusSnapshot(null)
 
-    // ===============================
-    // Trigger & chunking
-    // ===============================
-
-    /**
-     * FCLvNext bepaalt of er een stijging is.
-     * Deze controller beslist alleen of hij
-     * dan MAG reageren.
-     */
-    fun shouldTrigger(
-        riseDetected: Boolean,
-        now: DateTime
-    ): Boolean {
-        if (!isActive(now)) return false
-        return riseDetected
-    }
-
-    /**
-     * Berekent hoeveel we NU zouden willen geven,
-     * begrensd door maxSMB.
-     */
-    fun computeChunk(maxSmb: Double): Double {
-        if (state.remainingU <= 0.0) return 0.0
-        return minOf(state.remainingU, maxSmb)
+        // 3️⃣ Interne state volledig resetten
+        reset()
     }
 
 
 
-    fun consumePlannedChunk(chunkU: Double, now: DateTime) {
+    // ===============================
+    // Chunking / delivery
+    // ===============================
+    fun computeChunk(maxSmb: Double): Double =
+        if (!isActive(DateTime.now())) 0.0
+        else min(state.remainingU, maxSmb)
+
+    fun consumePlannedChunk(chunkU: Double) {
         if (chunkU <= 0.0) return
 
+        state.deliveredU += chunkU
         state.remainingU =
             (state.remainingU - chunkU).coerceAtLeast(0.0)
-
-        state.lastFireAt = now
-
-
     }
 
-    fun cleanupIfExpired(now: DateTime) {
-        val until = state.validUntil ?: return
-        if (now.isAfter(until)) {
-            reset()
-        }
-    }
-
-    /**
-     * Laat prebolus langzaam aflopen als hij niet (volledig) wordt afgegeven.
-     *
-     * - Eerste gracePeriodMin minuten: geen decay
-     * - Daarna niet-lineaire afbouw richting TTL
-     * - Beperkt ALLEEN remainingU (nooit verhogen)
-     */
+    // ===============================
+    // Decay
+    // ===============================
     private fun graceMinutes(type: MealIntentType): Int = when (type) {
         MealIntentType.SNACK  -> 45
-        MealIntentType.SMALL  -> 30
-        MealIntentType.NORMAL -> 40
-        MealIntentType.LARGE  -> 50
+        MealIntentType.SMALL  -> 15
+        MealIntentType.NORMAL -> 20
+        MealIntentType.LARGE  -> 20
     }
 
+    private fun computeDecayFactor(now: DateTime): Double {
+        val armedAt = state.armedAt ?: return 0.0
+        val validUntil = state.validUntil ?: return 0.0
+        val type = state.mealType ?: return 0.0
 
-    fun applyDecay(now: DateTime) {
-        if (!state.active) return
+        if (now.isAfter(validUntil)) return 0.0
 
-        val armedAt = state.armedAt ?: return
-        val validUntil = state.validUntil ?: return
-        val type = state.mealType ?: return
-
-        if (now.isAfter(validUntil)) return
-
-        val minutesSinceArmed =
+        val minutesSince =
             Minutes.minutesBetween(armedAt, now).minutes
-        if (minutesSinceArmed < 0) return
 
         val totalMinutes =
             Minutes.minutesBetween(armedAt, validUntil).minutes
-        if (totalMinutes <= 1) return
+        if (totalMinutes <= 1) return 0.0
 
-        // 🟢 Grace per maaltijdtype, maar nooit ≥ TTL
-        val graceMin =
-            minOf(
-                graceMinutes(type),
-                totalMinutes - 1
-            ).coerceAtLeast(0)
+        val grace =
+            min(graceMinutes(type), totalMinutes - 1)
 
-        // ⏳ Binnen grace: geen decay
-        if (minutesSinceArmed <= graceMin) return
+        // binnen grace: geen decay
+        if (minutesSince <= grace) return 1.0
 
-        val decayWindow = totalMinutes - graceMin
-        if (decayWindow <= 0) return
-
+        val decayWindow = totalMinutes - grace
         val t =
-            ((minutesSinceArmed - graceMin).toDouble() / decayWindow)
+            ((minutesSince - grace).toDouble() / decayWindow)
                 .coerceIn(0.0, 1.0)
 
-        // 🔻 Kwadratische afname: langzaam begin, sneller einde
-        val decayFactor = 1.0 - (t * t)
+        // kwadratisch: langzaam begin, sneller einde
+        return (1.0 - t * t).coerceIn(0.0, 1.0)
+    }
 
-        val maxAllowedRemaining =
-            (state.totalU * decayFactor).coerceAtLeast(0.0)
+    fun applyDecay(now: DateTime) {
+        if (!state.active) return
+        if (state.remainingU <= 0.0) return
 
-        // ❗ Alleen reduceren, nooit verhogen
+        val decayFactor = computeDecayFactor(now)
+
+        // start decay exact 1×
+        if (!state.decayStarted && decayFactor < 1.0) {
+            state.decayStarted = true
+            state.remainingAtDecayStart = state.remainingU
+        }
+
+        if (!state.decayStarted) return
+
+        val decayedRemaining =
+            state.remainingAtDecayStart * decayFactor
+
+        // ❗ alleen reduceren
         state.remainingU =
-            minOf(state.remainingU, maxAllowedRemaining)
+            min(state.remainingU, decayedRemaining)
+                .coerceAtLeast(0.0)
     }
 
-
     // ===============================
-    // Debug / logging
+    // Snapshots
     // ===============================
-
-    fun debugString(now: DateTime): String {
-        if (!isActive(now)) return "PREBOLUS: inactive"
-
-        val until = state.validUntil
-        val minsLeft =
-            if (until != null) Minutes.minutesBetween(now, until).minutes.coerceAtLeast(0)
-            else 0
-
-        return "PREBOLUS: ${state.mealType} " +
-            "remaining=${"%.2f".format(state.remainingU)}U " +
-            "validFor=${minsLeft}m"
-    }
-
     fun snapshot(now: DateTime): PreBolusSnapshot? {
         if (!isActive(now)) return null
-
-        val armedAt = state.armedAt ?: return null
-        val validUntil = state.validUntil ?: return null
-
-        val deliveredU = (state.totalU - state.remainingU).coerceAtLeast(0.0)
-
-        val minutesSince =
-            Minutes.minutesBetween(armedAt, now).minutes
-
-        val minutesLeft =
-            Minutes.minutesBetween(now, validUntil).minutes.coerceAtLeast(0)
-
-        return PreBolusSnapshot(
-            mealType = state.mealType ?: return null,
-            totalU = state.totalU,
-            deliveredU = deliveredU,
-            remainingU = state.remainingU,
-            armedAt = armedAt,
-            validUntil = validUntil,
-            minutesSinceArmed = minutesSince,
-            minutesRemaining = minutesLeft
-        )
+        return buildSnapshot(now)
     }
 
     fun uiSnapshot(now: DateTime): PreBolusSnapshot? {
+        // 🔑 KOPPELING MET DE ENIGE WAARHEID
+        val intent = MealIntentRepository.get() ?: return null
+
+        // bestaande UI-logica blijft leidend
         if (!isUiActive(now)) return null
-        val validUntil = state.validUntil ?: return null
-        if (now.isAfter(validUntil)) return null
 
-        val armedAt = state.armedAt ?: return null
+        return buildSnapshot(now)
+    }
 
-        val deliveredU = (state.totalU - state.remainingU).coerceAtLeast(0.0)
+
+    private fun buildSnapshot(now: DateTime): PreBolusSnapshot {
+        val armedAt = state.armedAt!!
+        val validUntil = state.validUntil!!
 
         val minutesSince =
             Minutes.minutesBetween(armedAt, now).minutes
-
         val minutesLeft =
             Minutes.minutesBetween(now, validUntil).minutes.coerceAtLeast(0)
 
-        return PreBolusSnapshot(
-            mealType = state.mealType ?: return null,
-            totalU = state.totalU,
-            deliveredU = deliveredU,
-            remainingU = state.remainingU,
-            armedAt = armedAt,
-            validUntil = validUntil,
-            minutesSinceArmed = minutesSince,
-            minutesRemaining = minutesLeft
-        )
+        val status =
+            when {
+                now.isAfter(validUntil) ->
+                    UiStatus.EXPIRED
+                state.remainingU > 0.0 ->
+                    UiStatus.ACTIVE
+                else ->
+                    UiStatus.DELIVERED
+            }
+
+        val snapshot =
+            PreBolusSnapshot(
+                mealType = state.mealType!!,
+                totalU = state.totalU,
+                deliveredU = state.deliveredU,
+                remainingU = state.remainingU,
+
+                armedAt = armedAt.millis,          // ✅ Long
+                validUntil = validUntil.millis,    // ✅ Long
+
+                minutesSinceArmed = minutesSince,
+                minutesRemaining = minutesLeft,
+
+                decayFactor = computeDecayFactor(now),
+                status = status
+            )
+
+        MealIntentRepository.setPreBolusSnapshot(snapshot)
+
+        return snapshot
     }
+
 
 
 }
