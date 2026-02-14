@@ -247,20 +247,7 @@ class FCLvNextStatusFormatter(
         }
 
 
-    private fun humanEpisodePhase(
-        snapshot: FCLvNextObsSnapshot
-    ): String {
-        // Heuristisch, veilig
-        if (!snapshot.activeEpisode || snapshot.activeEpisodeStartedAt == null)
-            return "—"
 
-        return when {
-            snapshot.deliveryConfidence < 0.6 ->
-                "🟡 TAIL (voorzichtig afronden)"
-            else ->
-                "🟢 ACTIEF (insuline-effect verwacht)"
-        }
-    }
 
     private fun minutesBetween(a: DateTime, b: DateTime): Long =
         (b.millis - a.millis) / 60000
@@ -290,34 +277,119 @@ ${gate.reason?.let { "• Opmerking   : $it" } ?: ""}
 """.trimIndent()
     }
 
-    private fun formatEpisodes(
-        episodes: List<Episode>,
-        now: DateTime
-    ): String {
-        if (episodes.isEmpty()) return "Geen afgeronde episodes"
 
-        return episodes
-            .take(UI_EPISODES_TO_SHOW)
-            .joinToString("\n") { ep ->
-                val end = ep.endTime ?: now
-                val mins = (end.millis - ep.startTime.millis) / 60000
 
-                val reason =
-                    when {
-                        ep.excluded && ep.exclusionReason != null ->
-                            " ⛔ ${ep.exclusionReason}"
+    private data class AxisRecommendation(
+        val axis: Axis,
+        val current: String,
+        val recommended: String
+    )
+    private fun buildAxisRecommendation(
+        axis: AxisSnapshot
+    ): AxisRecommendation? {
 
-                        else ->
-                            " ✓ afgerond"
-                    }
+        if (axis.status == AxisStatus.NO_DIRECTION) return null
+        if (axis.dominantOutcome == null) return null
+        if (axis.dominantConfidence < 0.45) return null
+        if (axis.episodesSeen < 5) return null
 
-                "• ${ep.startTime.toString("HH:mm")} → ${end.toString("HH:mm")} (${mins} min)$reason"
+        return when (axis.axis) {
+
+            Axis.TIMING -> {
+                val current = prefs.get(StringKey.fcl_vnext_meal_detect_speed)
+
+                val recommended = when (axis.dominantOutcome.name) {
+                    "LATE" -> nextFaster(current)
+                    "EARLY" -> nextSlower(current)
+                    else -> null
+                }
+
+                recommended?.let {
+                    AxisRecommendation(Axis.TIMING, current, it)
+                }
             }
+
+            Axis.HEIGHT -> {
+                val current = prefs.get(StringKey.fcl_vnext_profile)
+
+                val recommended = when (axis.dominantOutcome.name) {
+                    "TOO_STRONG" -> nextMoreConservative(current)
+                    "TOO_WEAK" -> nextMoreAggressive(current)
+                    else -> null
+                }
+
+                recommended?.let {
+                    AxisRecommendation(Axis.HEIGHT, current, it)
+                }
+            }
+
+            Axis.PERSISTENCE -> {
+                val current = prefs.get(StringKey.fcl_vnext_correction_style)
+
+                val recommended = when (axis.dominantOutcome.name) {
+                    "TOO_SHORT" -> nextMorePersistent(current)
+                    "TOO_LONG" -> nextMoreCautious(current)
+                    else -> null
+                }
+
+                recommended?.let {
+                    AxisRecommendation(Axis.PERSISTENCE, current, it)
+                }
+            }
+
+            else -> null
+        }
+    }
+    private fun nextFaster(current: String) = when (current) {
+        "VERY_SLOW" -> "SLOW"
+        "SLOW" -> "MODERATE"
+        "MODERATE" -> "FAST"
+        "FAST" -> "VERY_FAST"
+        else -> null
+    }
+
+    private fun nextSlower(current: String) = when (current) {
+        "VERY_FAST" -> "FAST"
+        "FAST" -> "MODERATE"
+        "MODERATE" -> "SLOW"
+        "SLOW" -> "VERY_SLOW"
+        else -> null
+    }
+
+    private fun nextMoreConservative(current: String) = when (current) {
+        "VERY_AGGRESSIVE" -> "AGGRESSIVE"
+        "AGGRESSIVE" -> "BALANCED"
+        "BALANCED" -> "STRICT"
+        "STRICT" -> "VERY_STRICT"
+        else -> null
+    }
+
+    private fun nextMoreAggressive(current: String) = when (current) {
+        "VERY_STRICT" -> "STRICT"
+        "STRICT" -> "BALANCED"
+        "BALANCED" -> "AGGRESSIVE"
+        "AGGRESSIVE" -> "VERY_AGGRESSIVE"
+        else -> null
+    }
+
+    private fun nextMorePersistent(current: String) = when (current) {
+        "VERY_CAUTIOUS" -> "CAUTIOUS"
+        "CAUTIOUS" -> "NORMAL"
+        "NORMAL" -> "PERSISTENT"
+        "PERSISTENT" -> "VERY_PERSISTENT"
+        else -> null
+    }
+
+    private fun nextMoreCautious(current: String) = when (current) {
+        "VERY_PERSISTENT" -> "PERSISTENT"
+        "PERSISTENT" -> "NORMAL"
+        "NORMAL" -> "CAUTIOUS"
+        "CAUTIOUS" -> "VERY_CAUTIOUS"
+        else -> null
     }
 
 
-
-    private fun buildLearningSnapshotBlock(
+    fun buildLearningSnapshotBlock(
         snapshot: FCLvNextObsSnapshot?
     ): String {
 
@@ -331,90 +403,115 @@ Nog geen observaties beschikbaar
 
         val sb = StringBuilder()
 
-        // ── LEARNING STATUS ─────────────────────
         sb.append("📚 LEARNING\n")
         sb.append("─────────────────────\n")
-        sb.append("• Status        : ${humanLearningStatus(snapshot.status)}\n")
-        val totalEvidence = snapshot.axes.sumOf { it.episodesSeen }
-        sb.append("• Episodes (sessie) : ${snapshot.totalEpisodes}\n")
-        sb.append("• Evidence (buckets): $totalEvidence\n")
-
-        sb.append("• Delivery conf : ${"%.2f".format(snapshot.deliveryConfidence)}\n")
-        sb.append("• Laatste check : ${snapshot.createdAt.toString("HH:mm:ss")}\n")
-
-        // ── EPISODE STATUS ──────────────────────
-        sb.append("\n🧩 ACTIEVE EPISODE\n")
-        sb.append("─────────────────────\n")
+        sb.append("• Status : ${humanLearningStatus(snapshot.status)}\n")
+        sb.append("• Episodes : ${snapshot.totalEpisodes}\n")
 
         if (snapshot.activeEpisode && snapshot.activeEpisodeStartedAt != null) {
             val mins = minutesBetween(snapshot.activeEpisodeStartedAt, snapshot.createdAt)
-
-            sb.append("• Status        : 🟢 ACTIEF\n")
-            sb.append("• Gestart       : ${snapshot.activeEpisodeStartedAt.toString("HH:mm")}\n")
-            sb.append("• Duur          : ${mins} min\n")
-            sb.append("• Fase          : ${humanEpisodePhase(snapshot)}\n")
-        } else {
-            sb.append("• Status        : ⚪ Geen actieve episode\n")
+            sb.append("• Actieve episode : ${mins} min\n")
         }
 
-        sb.append("\n🧾 Laatste episodes\n")
-        sb.append("─────────────────────\n")
-        sb.append(
-            formatEpisodes(
-                snapshot.recentEpisodes,
-                snapshot.createdAt
-            )
-        ).append("\n")
+        // ─────────────────────────────
+        // COMPACT ADVIES BLOK
+        // ─────────────────────────────
 
+        val activeSignals = snapshot.axes
+            .filter { it.dominantOutcome != null }
+            .sortedByDescending { it.dominantConfidence }
 
-        // ── AXES ────────────────────────────────
-            snapshot.axes.forEach { axis ->
-                sb.append("\n${axis.axis}\n")
-                sb.append("─────────────────────\n")
+        if (activeSignals.isNotEmpty()) {
+            sb.append("\n📊 Signaalopbouw\n")
+            sb.append("─────────────────────\n")
 
-                val statusText = when (axis.status) {
-                    AxisStatus.NO_DIRECTION -> "nog geen richting"
-                    AxisStatus.WEAK_SIGNAL -> "zwak signaal"
-                    AxisStatus.STRUCTURAL_SIGNAL -> "structureel signaal"
-                }
+            activeSignals.take(3).forEach { axis ->
+                val pct = (axis.dominantConfidence * 100).toInt()
+                val outcome =
+                    axis.dominantOutcome?.name ?: "—"
 
-                sb.append("• $statusText\n")
-                sb.append("• Evidence      : ${axis.episodesSeen}\n")
-
-                // Toon max 3 sterkste outcomes met percentage (géén fake counts)
-                val topOutcomes =
-                    axis.percentages
-                        .toList()
-                        .sortedByDescending { it.second }
-                        .take(3)
-
-                if (topOutcomes.isNotEmpty()) {
-                    sb.append("  (")
-                    sb.append(
-                        topOutcomes.joinToString(", ") { (outcome, pct) ->
-                            "${outcome.name} ${"%.0f".format(pct)}%"
-                        }
-                    )
-                    sb.append(")\n")
-                }
-
-                if (axis.dominantOutcome != null &&
-                    axis.status != AxisStatus.NO_DIRECTION
-                ) {
-                    sb.append(
-                        "  ↳ dominant: ${axis.dominantOutcome} " +
-                            "(conf ${"%.2f".format(axis.dominantConfidence)})\n"
-                    )
-                }
-
-                axis.lastEpisodeAt?.let { ts ->
-                    sb.append("  ↳ laatst gezien: ${ts.toString("HH:mm")}\n")
-                }
+                sb.append(
+                    "${axis.axis.name.padEnd(12)} : $outcome ($pct%)\n"
+                )
             }
+        }
+
+
+        val recommendations =
+            snapshot.axes.mapNotNull { buildAxisRecommendation(it) }
+
+        if (recommendations.isNotEmpty()) {
+
+            sb.append("\n📌 ADVIES\n")
+            sb.append("─────────────────────\n")
+
+            recommendations.forEach { rec ->
+
+                val axisSnapshot =
+                    snapshot.axes.firstOrNull { it.axis == rec.axis }
+
+                val confidence =
+                    axisSnapshot?.dominantConfidence ?: 0.0
+
+                val confidencePct = (confidence * 100).toInt()
+
+                val strengthLabel = when {
+                    confidence >= 0.75 -> "🟢 Sterk"
+                    confidence >= 0.60 -> "🟡 Matig"
+                    confidence >= 0.45 -> "🟠 Zwak"
+                    else -> "⚪ Onzeker"
+                }
+
+
+                val outcomeLabel =
+                    when (axisSnapshot?.dominantOutcome?.name) {
+                        "TOO_STRONG" -> "Te sterk"
+                        "TOO_WEAK" -> "Te zwak"
+                        "LATE" -> "Te laat"
+                        "EARLY" -> "Te vroeg"
+                        "TOO_SHORT" -> "Te kort"
+                        "TOO_LONG" -> "Te lang"
+                        else -> axisSnapshot?.dominantOutcome?.name ?: "—"
+                    }
+
+                val currentHuman =
+                    when (rec.axis) {
+                        Axis.HEIGHT ->
+                            profileLabel(rec.current)
+                        Axis.TIMING ->
+                            mealDetectLabel(rec.current)
+                        Axis.PERSISTENCE ->
+                            correctionStyleLabel(rec.current)
+                        else ->
+                            rec.current
+                    }
+
+                val newHuman =
+                    when (rec.axis) {
+                        Axis.HEIGHT ->
+                            profileLabel(rec.recommended)
+                        Axis.TIMING ->
+                            mealDetectLabel(rec.recommended)
+                        Axis.PERSISTENCE ->
+                            correctionStyleLabel(rec.recommended)
+                        else ->
+                            rec.recommended
+                    }
+
+                sb.append(
+                    "${rec.axis.name.padEnd(12)} : " +
+                        "$outcomeLabel ($confidencePct%) " +
+                        "$strengthLabel\n" +
+                        "                 $currentHuman → $newHuman\n"
+                )
+
+            }
+        }
 
 
         return sb.toString().trimEnd()
     }
+
 
 
 
@@ -474,7 +571,7 @@ ${metricsText ?: "Nog geen data"}
 
         return """
 ════════════════════════
- 🧠 FCL meal V4 v1.0.0
+ 🧠 FCL meal V4 v1.2.4
  
 ════════════════════════
 • Profiel              : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}

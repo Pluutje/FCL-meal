@@ -236,14 +236,14 @@
     <string name="max_bolus_night_title">Maximale bolus nacht</string>
     <string name="max_bolus_night_summary">Maximale hoeveelheid insuline die FCL vNext ’s nachts in één actie mag toedienen.\nExtra bescherming tegen nachtelijke hypo’s.</string>
 
-    <string name="fcl_vnext_meal_strength_small_title">Maaltijdkracht – Klein</string>
+    <string name="fcl_vnext_meal_strength_small_title">Kleine maaltijd</string>
     <string name="fcl_vnext_meal_strength_small_summary">Versterkt of verzwakt FCL vNext bij een kleine maaltijd.\n1.0 = standaard.\nHoger = sneller en krachtiger reageren.\nLager = behoudender gedrag.</string>
 
-    <string name="fcl_vnext_meal_strength_normal_title">Maaltijdkracht – Normaal</string>
+    <string name="fcl_vnext_meal_strength_normal_title">Normale maaltijd</string>
     <string name="fcl_vnext_meal_strength_normal_summary">Versterkt of verzwakt FCL vNext bij een normale maaltijd.\n1.0 = standaard.\nHoger = sneller en krachtiger reageren.\nLager = behoudender gedrag.</string>
-    <string name="fcl_vnext_meal_strength_large_title">Maaltijdkracht – Groot</string>
+    <string name="fcl_vnext_meal_strength_large_title">Grote maaltijd</string>
     <string name="fcl_vnext_meal_strength_large_summary">Versterkt of verzwakt FCL vNext bij een grote maaltijd.\n1.0 = standaard.\nHoger = sneller en krachtiger reageren.\nLager = behoudender gedrag.</string>
-    <string name="fcl_vnext_meal_strength_snack_title">Maaltijdkracht – Snack</string>
+    <string name="fcl_vnext_meal_strength_snack_title">Snack / Borrelen</string>
     <string name="fcl_vnext_meal_strength_snack_summary">FCL-reactie bij langdurig snacken of kleine koolhydraat-inname.\nLager = subtielere micro-correcties.\nHoger = sneller ingrijpen bij opstapeling.</string>
 
 
@@ -253,11 +253,11 @@
     <string name="fcl_vnext_bg_smoothing_alpha_title">BG smoothing factor</string>
     <string name="fcl_vnext_bg_smoothing_alpha_summary">Mate van gladmaken van CGM-ruis vóór trendberekening.\nHoger = rustiger maar trager.\nLager = sneller maar gevoeliger.</string>
 
-    <string name="prebolus_small_title">Pre-bolus klein</string>
+    <string name="prebolus_small_title">Kleine maaltijd</string>
     <string name="prebolus_small_summary">Vooraf toegediende bolus bij een kleine maaltijd.Wordt gebruikt zodra een stijging inzet na het indrukken van de maaltijdknop.</string>
-    <string name="prebolus_normal_title">Pre-bolus normaal</string>
+    <string name="prebolus_normal_title">Normale maaltijd</string>
     <string name="prebolus_normal_summary">Vooraf toegediende bolus bij een normale maaltijd.Helpt snel IOB opbouwen zodra de glucose begint te stijgen.</string>
-    <string name="prebolus_large_title">Pre-bolus groot</string>
+    <string name="prebolus_large_title">Grote maaltijd</string>
     <string name="prebolus_large_summary">Vooraf toegediende bolus bij een grote maaltijd.Alleen actief bij voldoende veiligheid (geen daling, geen hypo).</string>
 
 

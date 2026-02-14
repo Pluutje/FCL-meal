@@ -488,5 +488,17 @@ class FCLvNextObsConfidenceAccumulator(
      */
     fun confidenceAccumulatorUnsafe(): FCLvNextObsConfidenceAccumulator = this
 
+    fun resetAxis(axis: Axis) {
+
+        val keysToRemove = buckets.keys
+            .filter { it.first == axis }
+
+        keysToRemove.forEach { key ->
+            buckets.remove(key)
+        }
+    }
+
+
+
 
 }

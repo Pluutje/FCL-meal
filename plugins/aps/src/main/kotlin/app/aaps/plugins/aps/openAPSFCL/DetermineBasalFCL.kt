@@ -57,11 +57,15 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.learning.EmptyBgHistoryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.EmptyInsulinDeliveryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextBgHistoryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextTrends
+import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsAdviceEmitterConfig
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsBgProviderAdapter
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsInsulinDeliveryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsLearningStore
+import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsSnapshot
+import app.aaps.plugins.aps.openAPSFCL.vnext.learning.StoredLearningState
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.MealIntentOverlay
+import com.google.gson.Gson
 
 @Singleton
 
@@ -99,6 +103,7 @@ class DetermineBasalFCL @Inject constructor(
 
     private val obsOrchestrator: FCLvNextObsOrchestrator =
         FCLvNextObsOrchestrator(
+            prefs = preferences,
             episodeTracker = EpisodeTracker(),
             summarizer = FCLvNextObsEpisodeSummarizer(
                 bgProvider = FCLvNextObsBgProviderAdapter(bgHistoryProvider),
@@ -106,11 +111,16 @@ class DetermineBasalFCL @Inject constructor(
             ),
             axisScorer = FCLvNextObsAxisScorer(),
             confidenceAccumulator = FCLvNextObsConfidenceAccumulator().also { acc ->
-                // 🔁 RESTORE (1× bij opstart)
                 obsLearningStore.restore(acc)
             },
-            adviceEmitter = FCLvNextObsAdviceEmitter()
+            adviceEmitter = FCLvNextObsAdviceEmitter(
+                FCLvNextObsAdviceEmitterConfig()
+            )
         )
+
+    @Volatile
+    private var lastLearningSnapshot: FCLvNextObsSnapshot? = null
+
 
 
     private val consoleError = mutableListOf<String>()
@@ -120,6 +130,15 @@ class DetermineBasalFCL @Inject constructor(
 
         obsOrchestrator.attachLearningStore(obsLearningStore)
     }
+
+    fun getLearningSnapshot(): FCLvNextObsSnapshot? {
+        return try {
+            obsOrchestrator.getCurrentSnapshot()
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
 
     private fun Double.toFixed2(): String = DecimalFormat("0.00#").format(round(this, 2))
 
@@ -474,7 +493,6 @@ class DetermineBasalFCL @Inject constructor(
 
 
 
-// Debug / console output (read-only)
 
             val snapshot =
                 try {
@@ -484,6 +502,7 @@ class DetermineBasalFCL @Inject constructor(
                     null
                 }
 
+            lastLearningSnapshot = snapshot
 
             val statusFormatter =
                 FCLvNextStatusFormatter(
@@ -511,12 +530,17 @@ class DetermineBasalFCL @Inject constructor(
             consoleError.add("\n")
 
 
+
+
         } else {
             consoleError.add("FCLvNext skipped: Need more BG data ${bgHistoryPoints.size}/10")
         }
 
 
 // fun recordCycle
+     fun getLearningSnapshot(): FCLvNextObsSnapshot? {
+        return lastLearningSnapshot
+}
 
         var sens = sensMgdl
 

@@ -7,6 +7,7 @@ import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextConfig
 import org.joda.time.DateTime
 import kotlin.math.max
+import kotlin.math.pow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -61,6 +62,12 @@ class MealIntentOverlay @Inject constructor(
      * - preBolusU: “verwachte” prebolus volgens jouw knobs (of snack-preBolus uit intent)
      * - decayFactor: van PreBolusController.snapshot(now)?.decayFactor
      */
+    private fun smoothstep(x: Double): Double {
+        val t = x.coerceIn(0.0, 1.0)
+        return t * t * (3.0 - 2.0 * t)
+    }
+
+
     fun computeEffect(
         now: DateTime,
         maxSmb: Double,
@@ -92,11 +99,22 @@ class MealIntentOverlay @Inject constructor(
         val expected = expectedFromTdd(intent.type, avgTdd, maxSmb)
 
         // 4) Coverage → assist
+        // 4) Coverage → assist (non-lineair, minder dominante rol)
+
         val coverage =
             if (expected > 0.0) (preBolusU / expected).coerceIn(0.0, 1.2) else 0.0
 
+// 🔥 smooth saturation curve
+
+
+        // 🔵 Smoothstep variant – kruist lineair bij 30% coverage
+        val gamma = 1.37   // kruising bij 30%
+
+        val base = smoothstep(1.0 - coverage)
         val assistStrength =
-            (1.0 - coverage).coerceIn(0.0, 1.0)
+            base.pow(gamma).coerceIn(0.0, 1.0)
+
+
 
         // 5) User multiplier per meal type
         val userMul =

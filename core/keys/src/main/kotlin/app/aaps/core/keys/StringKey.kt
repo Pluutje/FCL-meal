@@ -74,4 +74,6 @@ enum class StringKey(
 
     fcl_vnext_learning_parameters_json(key = "fcl_vnext_learning_parameters_json", ""),
 
+    fcl_vnext_obs_debug(key = "fcl_vnext_obs_debug", ""),
+
 }

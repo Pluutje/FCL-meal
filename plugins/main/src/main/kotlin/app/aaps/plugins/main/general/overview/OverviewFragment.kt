@@ -127,7 +127,9 @@ import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
-
+import app.aaps.plugins.aps.openAPSFCL.FCLMetrics
+import app.aaps.plugins.aps.openAPSFCL.OpenAPSFCLPlugin
+import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextStatusFormatter
 
 class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickListener {
 
@@ -170,6 +172,7 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
     @Inject lateinit var commandQueue: CommandQueue
     @Inject lateinit var tirCalculator: TirCalculator
     @Inject lateinit var preBolusController: PreBolusController
+    @Inject lateinit var fclMetrics: FCLMetrics
 
     private val disposable = CompositeDisposable()
 
@@ -1028,31 +1031,26 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
 
         val iobText = iobText()
         val iobDialogText = iobDialogText()
-     //   val displayText = iobCobCalculator.getCobInfo("Overview COB").displayText(rh, decimalFormatter)
-     //   val lastCarbsTime = persistenceLayer.getNewestCarbs()?.timestamp ?: 0L
+
         runOnUiThread {
             _binding ?: return@runOnUiThread
             binding.infoLayout.iob.text = iobText
             binding.infoLayout.iobLayout.setOnClickListener { activity?.let { OKDialog.show(it, rh.gs(app.aaps.core.ui.R.string.iob), iobDialogText) } }
-      /*      // cob
-            var cobText = displayText ?: rh.gs(app.aaps.core.ui.R.string.value_unavailable_short)
 
-            val constraintsProcessed = loop.lastRun?.constraintsProcessed
-            val lastRun = loop.lastRun
-            if (config.APS && constraintsProcessed != null && lastRun != null) {
-                if (constraintsProcessed.carbsReq > 0) {
-                    //only display carbsreq when carbs have not been entered recently
-                    if (lastCarbsTime < lastRun.lastAPSRun) {
-                        cobText += "\n" + constraintsProcessed.carbsReq + " " + rh.gs(app.aaps.core.ui.R.string.required)
-                    }
-                    if (carbAnimation?.isRunning == false)
-                        carbAnimation?.start()
-                } else {
-                    carbAnimation?.stop()
-                    carbAnimation?.selectDrawable(0)
-                }
-            }    */
             binding.infoLayout.cob.text = cobText
+            binding.infoLayout.cobLayout.setOnClickListener {
+                activity?.let { activity ->
+                    val isNight = false
+                    val stats = fclMetrics.getUserStatsString(isNight)
+
+                    OKDialog.show(
+                        activity,
+                        "📊 Glucose statistieken",
+                        stats
+                    )
+                }
+            }
+
         }
     }
 
@@ -1246,8 +1244,6 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
             secondaryGraphsData[g].performUpdate()
         }
 
-
-
     }
 
     private fun updateCalcProgress() {
@@ -1301,17 +1297,10 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
         }
 
         if (variableSens != 0.0 && isfMgdl != null) {
-         //   if (variableSens != isfMgdl && variableSens != 0.0 && isfMgdl != null) {
+
             val okDialogText: ArrayList<String> = ArrayList()
             val overViewText: ArrayList<String> = ArrayList()
-         //   val autoSensHiddenRange = 0.0             //Hide Autosens value if equals 100%
-         //   val autoSensMax = 100.0 + (preferences.get(DoubleKey.AutosensMax) - 1.0) * autoSensHiddenRange * 100.0
-         //   val autoSensMin = 100.0 + (preferences.get(DoubleKey.AutosensMin) - 1.0) * autoSensHiddenRange * 100.0
-         //   lastAutosensRatio?.let {
-         //       if (it < autoSensMin || it > autoSensMax)
-         //           overViewText.add(rh.gs(app.aaps.core.ui.R.string.autosens_short, it))
-         //       okDialogText.add(rh.gs(app.aaps.core.ui.R.string.autosens_long, it))
-         //   }
+
             overViewText.add(rh.gs(app.aaps.core.ui.R.string.autosens_short, ratioUsed))
             okDialogText.add(rh.gs(app.aaps.core.ui.R.string.autosens_long, ratioUsed))
             overViewText.add(
@@ -1324,25 +1313,33 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
             binding.infoLayout.sensitivity.text = overViewText.joinToString("\n")
             binding.infoLayout.sensitivity.visibility = View.VISIBLE
             binding.infoLayout.variableSensitivity.visibility = View.GONE
-         //   if (ratioUsed != 1.0 && ratioUsed != lastAutosensData?.autosensResult?.ratio)
-           //     okDialogText.add(rh.gs(app.aaps.core.ui.R.string.algorithm_long, ratioUsed * 100))
-          //  okDialogText.add(rh.gs(app.aaps.core.ui.R.string.isf_for_carbs, profileUtil.fromMgdlToUnits(isfForCarbs ?: 0.0, profileFunction.getUnits())))
-        //    if (config.APS) {
-        //        val aps = activePlugin.activeAPS
-        //        aps.getSensitivityOverviewString()?.let {
-        //            okDialogText.add(it)
-        //        }
-        //    }
-            binding.infoLayout.asLayout.setOnClickListener { activity?.let { OKDialog.show(it, rh.gs(app.aaps.core.ui.R.string.sensitivity), okDialogText.joinToString("\n")) } }
 
-        } /*else {
-            binding.infoLayout.sensitivity.text =
-                lastAutosensData?.let {
-                    rh.gs(app.aaps.core.ui.R.string.autosens_short, it.autosensResult.ratio * 100)
-                } ?: ""
-            binding.infoLayout.variableSensitivity.visibility = View.GONE
-            binding.infoLayout.sensitivity.visibility = View.VISIBLE
-        }  */
+            binding.infoLayout.asLayout.setOnClickListener {
+
+                activity?.let { activity ->
+
+                    val plugin = activePlugin.activeAPS as? OpenAPSFCLPlugin
+                    val snapshot = plugin?.getLearningSnapshot()
+
+                    if (snapshot == null) {
+                        OKDialog.show(activity, "🧠 FCL Learning", "Nog geen learning data beschikbaar.")
+                        return@let
+                    }
+
+                    val formatter = FCLvNextStatusFormatter(
+                        prefs = preferences,
+                        mealIntentRepository = MealIntentRepository,
+                        preBolusController = PreBolusController()
+                    )
+
+                    val text = formatter.buildLearningSnapshotBlock(snapshot)
+
+                    OKDialog.show(activity, "🧠 FCL Learning", text)
+                }
+            }
+
+
+        }
     }
 
     private fun updatePumpStatus() {

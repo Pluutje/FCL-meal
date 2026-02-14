@@ -82,6 +82,7 @@ import app.aaps.plugins.aps.R
 import app.aaps.plugins.aps.events.EventOpenAPSUpdateGui
 import app.aaps.plugins.aps.events.EventResetOpenAPSGui
 import app.aaps.plugins.aps.openAPS.TddStatus
+import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsSnapshot
 import dagger.android.HasAndroidInjector
 import org.json.JSONObject
 import javax.inject.Inject
@@ -864,6 +865,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
         // =================================================
         // 1️⃣ Maaltijden
         // =================================================
+
         val MEAL_INTENT = preferenceManager.createPreferenceScreen(context).apply {
             key = "FCLvNextMeal"
             title = "\uD83C\uDF7D\uFE0F  Maaltijden"
@@ -880,14 +882,27 @@ open class OpenAPSFCLPlugin @Inject constructor(
                     summary = R.string.fcl_vnext_4_MEAL_summary
                 )
             )
-// Toon maaltijdknop
 
+            // 1) Aan/uit
             addPreference(
                 AdaptiveSwitchPreference(
                     ctx = context,
                     booleanKey = BooleanKey.ShowMealIntentButton,
-                    title = R.string.meal_intent)
+                    title = R.string.meal_intent
+                )
             )
+
+            // ─────────────────────────────────────────────
+            // 2) Header: Pre-bolus
+            // ─────────────────────────────────────────────
+            addPreference(
+                PreferenceCategory(context).apply {
+                    key = "MealHeaderPreBolus"
+                    title = "Pre-bolus"
+                }
+            )
+
+            // 3) Pre-bolus instellingen
             addPreference(
                 AdaptiveDoublePreference(
                     ctx = context,
@@ -899,15 +914,6 @@ open class OpenAPSFCLPlugin @Inject constructor(
             addPreference(
                 AdaptiveDoublePreference(
                     ctx = context,
-                    doubleKey = DoubleKey.fcl_vnext_meal_strength_small,
-                    dialogMessage = R.string.fcl_vnext_meal_strength_small_summary,
-                    title = R.string.fcl_vnext_meal_strength_small_title
-                )
-            )
-
-            addPreference(
-                AdaptiveDoublePreference(
-                    ctx = context,
                     doubleKey = DoubleKey.prebolus_normal,
                     dialogMessage = R.string.prebolus_normal_summary,
                     title = R.string.prebolus_normal_title
@@ -916,18 +922,37 @@ open class OpenAPSFCLPlugin @Inject constructor(
             addPreference(
                 AdaptiveDoublePreference(
                     ctx = context,
-                    doubleKey = DoubleKey.fcl_vnext_meal_strength_normal,
-                    dialogMessage = R.string.fcl_vnext_meal_strength_normal_summary,
-                    title = R.string.fcl_vnext_meal_strength_normal_title
-                )
-            )
-
-            addPreference(
-                AdaptiveDoublePreference(
-                    ctx = context,
                     doubleKey = DoubleKey.prebolus_large,
                     dialogMessage = R.string.prebolus_large_summary,
                     title = R.string.prebolus_large_title
+                )
+            )
+
+            // ─────────────────────────────────────────────
+            // 4) Header: Kracht / correctiesterkte
+            // ─────────────────────────────────────────────
+            addPreference(
+                PreferenceCategory(context).apply {
+                    key = "MealHeaderStrength"
+                    title = "Kracht / correctiesterkte"
+                }
+            )
+
+            // 5) Strength instellingen
+            addPreference(
+                AdaptiveDoublePreference(
+                    ctx = context,
+                    doubleKey = DoubleKey.fcl_vnext_meal_strength_small,
+                    dialogMessage = R.string.fcl_vnext_meal_strength_small_summary,
+                    title = R.string.fcl_vnext_meal_strength_small_title
+                )
+            )
+            addPreference(
+                AdaptiveDoublePreference(
+                    ctx = context,
+                    doubleKey = DoubleKey.fcl_vnext_meal_strength_normal,
+                    dialogMessage = R.string.fcl_vnext_meal_strength_normal_summary,
+                    title = R.string.fcl_vnext_meal_strength_normal_title
                 )
             )
             addPreference(
@@ -946,8 +971,9 @@ open class OpenAPSFCLPlugin @Inject constructor(
                     title = R.string.fcl_vnext_meal_strength_snack_title
                 )
             )
-
         }
+
+
 
 
         // =================================================
@@ -960,6 +986,9 @@ open class OpenAPSFCLPlugin @Inject constructor(
      //   parent.addPreference(SAFETY)
     }
 
+    fun getLearningSnapshot(): FCLvNextObsSnapshot? {
+        return determineBasalFCL.getLearningSnapshot()
+    }
 
 
 

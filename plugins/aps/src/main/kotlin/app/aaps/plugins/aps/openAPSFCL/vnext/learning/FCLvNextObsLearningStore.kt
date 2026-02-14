@@ -76,7 +76,7 @@ class FCLvNextObsLearningStore(
     /**
      * Herstel learning-state (indien aanwezig & compatible)
      */
-    fun restore(
+ /*   fun restore(
         accumulator: FCLvNextObsConfidenceAccumulator
     ) {
         val json = prefs.get(KEY) ?: return
@@ -91,7 +91,43 @@ class FCLvNextObsLearningStore(
         } catch (_: Throwable) {
             // corrupt / oud → negeren
         }
+    }    */
+
+    fun restore(
+        accumulator: FCLvNextObsConfidenceAccumulator
+    ) {
+        val json = prefs.get(KEY)
+
+        if (json == null) {
+            prefs.put(StringKey.fcl_vnext_obs_debug, "restore: json NULL")
+            return
+        }
+
+        try {
+            val state =
+                gson.fromJson(json, StoredLearningState::class.java)
+
+            if (state.version != VERSION) {
+                prefs.put(StringKey.fcl_vnext_obs_debug,
+                          "restore: version mismatch ${state.version}")
+                return
+            }
+
+            prefs.put(
+                StringKey.fcl_vnext_obs_debug,
+                "restore OK evidence=${state.evidence.size}"
+            )
+
+            accumulator.importState(state)
+
+        } catch (t: Throwable) {
+            prefs.put(
+                StringKey.fcl_vnext_obs_debug,
+                "restore FAILED ${t.message}"
+            )
+        }
     }
+
 
     /**
      * Volledig resetten van OBS learning

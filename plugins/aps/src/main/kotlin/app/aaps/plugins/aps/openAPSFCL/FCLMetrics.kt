@@ -11,11 +11,11 @@ import java.util.Locale
 import kotlin.math.min
 import kotlin.math.sqrt
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.LearningMetricsSnapshot
+import javax.inject.Inject
+import javax.inject.Singleton
 
-
-
-
-class FCLMetrics(
+@Singleton
+class FCLMetrics @Inject constructor(
     private val context: Context,
     private val preferences: Preferences,
     private val persistenceLayer: PersistenceLayer   // ← NIEUW
@@ -23,9 +23,7 @@ class FCLMetrics(
     // ─────────────────────────────────────────────
     // UI / LEARNING METRICS UPDATE THROTTLING
     // ─────────────────────────────────────────────
-    private var lastUiMetricsUpdateAt: DateTime? = null
-    private val UI_METRICS_UPDATE_INTERVAL_MIN_DAY = 15
-    private val UI_METRICS_UPDATE_INTERVAL_MIN_NIGHT = 60
+  
 
     private var lastUserStatsUpdateAt: DateTime? = null
 

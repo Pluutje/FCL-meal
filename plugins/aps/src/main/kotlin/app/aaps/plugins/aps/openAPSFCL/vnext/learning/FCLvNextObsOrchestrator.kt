@@ -1,6 +1,8 @@
 package app.aaps.plugins.aps.openAPSFCL.vnext.learning
 
 import org.joda.time.DateTime
+import app.aaps.core.keys.interfaces.Preferences
+import app.aaps.core.keys.StringKey
 
 /**
  * FCLvNextObsOrchestrator
@@ -15,6 +17,7 @@ import org.joda.time.DateTime
  * Deze klasse is de ENIGE die je vanuit determineBasal hoeft aan te roepen.
  */
 class FCLvNextObsOrchestrator(
+    private val prefs: Preferences,
     private val episodeTracker: EpisodeTracker,
     private val summarizer: FCLvNextObsEpisodeSummarizer,
     private val axisScorer: FCLvNextObsAxisScorer,
@@ -35,6 +38,10 @@ class FCLvNextObsOrchestrator(
 
     private var lastDeliveryGateStatus: DeliveryGateStatus? = null
     private val deliveryGate = FCLvNextObsInsulinDeliveryGate()
+
+    private var lastProfile: String? = null
+    private var lastMealDetect: String? = null
+    private var lastCorrectionStyle: String? = null
 
 
     fun onFiveMinuteTick(
@@ -63,6 +70,7 @@ class FCLvNextObsOrchestrator(
         manualBolusDetected: Boolean
     ): FCLvNextObsAdviceBundle? {
 
+        checkForSettingChanges()
 
         lastDeliveryConfidence = deliveryConfidence.coerceIn(0.0, 1.0)
         // ─────────────────────────────────────────────
@@ -207,6 +215,39 @@ class FCLvNextObsOrchestrator(
         )
     }
 
+    private fun checkForSettingChanges() {
+
+        val currentProfile =
+            prefs.get(StringKey.fcl_vnext_profile)
+
+        val currentMealDetect =
+            prefs.get(StringKey.fcl_vnext_meal_detect_speed)
+
+        val currentCorrection =
+            prefs.get(StringKey.fcl_vnext_correction_style)
+
+        if (lastProfile == null) {
+            lastProfile = currentProfile
+            lastMealDetect = currentMealDetect
+            lastCorrectionStyle = currentCorrection
+            return
+        }
+
+        if (currentProfile != lastProfile) {
+            confidenceAccumulator.resetAxis(Axis.HEIGHT)
+            lastProfile = currentProfile
+        }
+
+        if (currentMealDetect != lastMealDetect) {
+            confidenceAccumulator.resetAxis(Axis.TIMING)
+            lastMealDetect = currentMealDetect
+        }
+
+        if (currentCorrection != lastCorrectionStyle) {
+            confidenceAccumulator.resetAxis(Axis.PERSISTENCE)
+            lastCorrectionStyle = currentCorrection
+        }
+    }
 
 
     private fun rebuildSnapshot(now: DateTime) {
@@ -220,16 +261,17 @@ class FCLvNextObsOrchestrator(
             }
 
         val total = episodeTracker.totalEpisodes()
+        val totalEvidence = axisSnapshots.sumOf { it.episodesSeen }
 
         val snapshotStatus =
             when {
-                total <= 0L ->
-                    SnapshotStatus.INIT
+                totalEvidence == 0 -> SnapshotStatus.INIT
                 axisSnapshots.any { it.status == AxisStatus.STRUCTURAL_SIGNAL } ->
                     SnapshotStatus.SIGNAL_PRESENT
                 else ->
                     SnapshotStatus.OBSERVING
             }
+
 
 
         val last = finishedEpisodes.firstOrNull()
@@ -275,6 +317,11 @@ class FCLvNextObsOrchestrator(
 
     fun getLastFinishedEpisode(): Episode? = finishedEpisodes.firstOrNull()
     fun getRecentFinishedEpisodes(): List<Episode> = finishedEpisodes.toList()
+
+    fun resetAxis(axis: Axis) {
+        confidenceAccumulator.resetAxis(axis)
+    }
+
 
     companion object {
         // bv. 0.20 = start episode als commandedU >= 20% van maxBolus
