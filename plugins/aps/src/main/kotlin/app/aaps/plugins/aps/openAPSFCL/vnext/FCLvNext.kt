@@ -2134,8 +2134,8 @@ class FCLvNext(
 
 
         // decay wordt bijgehouden door PreBolusController
-        val pbSnap = preBolusController.snapshot(now)
-        val decay = pbSnap?.decayFactor ?: 1.0
+        val pbAfterArm = preBolusController.snapshot(now)
+        val decay = pbAfterArm?.decayFactor ?: 1.0
 
         val mealIntentEffect = mealIntentOverlay.computeEffect(
             now = now,
@@ -2148,6 +2148,7 @@ class FCLvNext(
             base = config,
             effect = mealIntentEffect
         )
+
 
 
         // ─────────────────────────────────────────────
@@ -3307,14 +3308,53 @@ class FCLvNext(
         // ─────────────────────────────────────────────
         var effectiveHybridPercentage = config.hybridPercentage
 
+        val pbState = preBolusController.snapshot(now)
+
+        val trancheIndex =
+            if (pbState == null || pbState.totalU <= 0.0 || config.maxSMB <= 0.0) {
+                0
+            } else {
+                val chunkSize = config.maxSMB
+
+                val totalTranches =
+                    kotlin.math.ceil(pbState.totalU / chunkSize).toInt().coerceAtLeast(1)
+
+                val deliveredChunks =
+                    kotlin.math.floor((pbState.deliveredU + 1e-9) / chunkSize).toInt()
+
+                (deliveredChunks + 1).coerceIn(1, totalTranches)
+            }
+
+        val trancheTier =
+            when (trancheIndex) {
+                1 -> 1          // eerste chunk
+                2 -> 2          // tweede chunk
+                else -> 3       // derde en verder
+            }
+        val trancheDeltaThreshold =
+            when (trancheTier) {
+                1 -> 0.06      // eerste tranche: snel reageren
+                2 -> 0.08      // tweede tranche: duidelijker stijging nodig
+                else -> 0.10   // derde+: nog iets meer bevestiging
+            }
+
+        val trancheSlopeThreshold =
+            when (trancheTier) {
+                1 -> 0.20
+                2 -> 0.30
+                else -> 0.34
+            }
+
 
         val preBolusFireAllowed =
             preBolusController.isActive(now) &&
-                MealIntentRepository.get() != null &&
+                mealIntent != null &&
                 zoneEnum != BgZone.LOW &&
                 ctx.input.bgNow >= 4.4 &&
-          //      pred60 >= 4.2 &&
-                (ctx.recentDelta5m >= 0.06 || ctx.recentSlope >= 0.20)
+                (
+                    ctx.recentDelta5m >= trancheDeltaThreshold ||
+                        ctx.recentSlope >= trancheSlopeThreshold
+                    )
 
         if (preBolusFireAllowed) {
 
@@ -3333,14 +3373,18 @@ class FCLvNext(
 
                     val pb = preBolusController.snapshot(now)
                     status.append(
-                        "PREBOLUS APPLY: ${"%.2f".format(before)}→" +
+                        "PREBOLUS APPLY (tranche=$trancheIndex tier=$trancheTier): " +
+                            "${"%.2f".format(before)}→" +
                             "${"%.2f".format(commandedDose)}U " +
+                            "Δthr=${"%.2f".format(trancheDeltaThreshold)} " +
+                            "Sthr=${"%.2f".format(trancheSlopeThreshold)} " +
                             "hybrid=${effectiveHybridPercentage}% " +
                             (pb?.let {
-                                "PREBOLUS: ${it.mealType} remaining=${"%.2f".format(it.remainingU)}U validFor=${it.minutesRemaining}m"
-                            } ?: "PREBOLUS: inactive") +
+                                "remaining=${"%.2f".format(it.remainingU)}U validFor=${it.minutesRemaining}m"
+                            } ?: "") +
                             "\n"
                     )
+
 
                 } else {
                     status.append("PREBOLUS SKIP: commandedDose already >= chunk\n")
@@ -3498,16 +3542,16 @@ class FCLvNext(
         // ─────────────────────────────────────────────
         // Pre-bolus logging fields
         // ─────────────────────────────────────────────
-        val pb = preBolusController.snapshot(now)
+        val pbEnd = preBolusController.snapshot(now)
 
-        logRow.preBolusActive = (pb != null)
+        logRow.preBolusActive = preBolusController.isActive(now)   // of: (pbEnd != null) als snapshot null betekent “inactief”
+        logRow.preBolusType = pbEnd?.mealType?.name ?: "NONE"
+        logRow.preBolusTotalU = pbEnd?.totalU ?: 0.0
+        logRow.preBolusDeliveredU = pbEnd?.deliveredU ?: 0.0
+        logRow.preBolusRemainingU = pbEnd?.remainingU ?: 0.0
+        logRow.preBolusMinutesSinceArmed = pbEnd?.minutesSinceArmed ?: -1
+        logRow.preBolusMinutesRemaining = pbEnd?.minutesRemaining ?: -1
 
-        logRow.preBolusType = pb?.mealType?.name ?: "NONE"
-        logRow.preBolusTotalU = pb?.totalU ?: 0.0
-        logRow.preBolusDeliveredU = pb?.deliveredU ?: 0.0
-        logRow.preBolusRemainingU = pb?.remainingU ?: 0.0
-        logRow.preBolusMinutesSinceArmed = pb?.minutesSinceArmed ?: -1
-        logRow.preBolusMinutesRemaining = pb?.minutesRemaining ?: -1
 
         logRow.finalDose = finalDose
         logRow.commandedDose = commandedDose

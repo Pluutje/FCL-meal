@@ -9,6 +9,7 @@ import org.joda.time.Minutes
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.min
+import kotlin.math.pow
 
 @Singleton
 class PreBolusController @Inject constructor() {
@@ -128,10 +129,10 @@ class PreBolusController @Inject constructor() {
     // Decay
     // ===============================
     private fun graceMinutes(type: MealIntentType): Int = when (type) {
-        MealIntentType.SNACK  -> 45
-        MealIntentType.SMALL  -> 15
-        MealIntentType.NORMAL -> 20
-        MealIntentType.LARGE  -> 20
+        MealIntentType.SNACK  -> 30
+        MealIntentType.SMALL  -> 5
+        MealIntentType.NORMAL -> 5
+        MealIntentType.LARGE  -> 5
     }
 
     private fun computeDecayFactor(now: DateTime): Double {
@@ -159,8 +160,8 @@ class PreBolusController @Inject constructor() {
             ((minutesSince - grace).toDouble() / decayWindow)
                 .coerceIn(0.0, 1.0)
 
-        // kwadratisch: langzaam begin, sneller einde
-        return (1.0 - t * t).coerceIn(0.0, 1.0)
+        val decayPower = 1.5   // 1.0 = lineair, 2.0 = huidige kwadratisch-achtig
+        return (1.0 - t.pow(decayPower)).coerceIn(0.0, 1.0)
     }
 
     fun applyDecay(now: DateTime) {
