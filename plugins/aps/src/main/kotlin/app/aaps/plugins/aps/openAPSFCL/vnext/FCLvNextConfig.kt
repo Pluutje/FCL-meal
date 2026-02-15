@@ -260,11 +260,11 @@ fun loadFCLvNextConfig(
 
 
         // micro-hold
-        correctionHoldSlopeMax = -0.25,
-        correctionHoldAccelMax = 0.04,
-        correctionHoldDeltaMax = 1.7,
-        smallCorrectionMaxU = 0.25,
-        smallCorrectionCooldownMinutes = 12,
+        correctionHoldSlopeMax = -0.28,     // was -0.25
+        correctionHoldAccelMax = 0.035,     // was 0.04
+        correctionHoldDeltaMax = 1.85,      // was 1.7
+        smallCorrectionMaxU = 0.28,         // was 0.25
+        smallCorrectionCooldownMinutes = 10, // was 12
 
         // absorption / peak
         absorptionWindowMinutes = 60,
@@ -285,11 +285,10 @@ fun loadFCLvNextConfig(
         stagnationSlopeMaxPos = 0.25,
         stagnationAccelMaxAbs = 0.06,
         stagnationEnergyBoost = 0.12,
-        persistentAggressionMul = 1.0,
+        persistentAggressionMul = 1.08,     // was 1.0
         // persistent plateau detectie (defaults)
-        persistentSlopeAbs = 0.30,
-        persistentAccelAbs = 0.08,
-
+        persistentSlopeAbs = 0.32,          // was 0.30
+        persistentAccelAbs = 0.085,         // was 0.08
 
         earlyPeakEscalationBonus = 0.10,
         earlyStage1ThresholdMul = 1.00,
