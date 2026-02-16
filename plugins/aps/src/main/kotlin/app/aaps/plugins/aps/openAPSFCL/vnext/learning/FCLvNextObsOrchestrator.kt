@@ -234,17 +234,17 @@ class FCLvNextObsOrchestrator(
         }
 
         if (currentProfile != lastProfile) {
-            confidenceAccumulator.resetAxis(Axis.HEIGHT)
+            resetAxis(Axis.HEIGHT)  // ✅ Gebruik de nieuwe resetAxis met save
             lastProfile = currentProfile
         }
 
         if (currentMealDetect != lastMealDetect) {
-            confidenceAccumulator.resetAxis(Axis.TIMING)
+            resetAxis(Axis.TIMING)
             lastMealDetect = currentMealDetect
         }
 
         if (currentCorrection != lastCorrectionStyle) {
-            confidenceAccumulator.resetAxis(Axis.PERSISTENCE)
+            resetAxis(Axis.PERSISTENCE)
             lastCorrectionStyle = currentCorrection
         }
     }
@@ -320,6 +320,16 @@ class FCLvNextObsOrchestrator(
 
     fun resetAxis(axis: Axis) {
         confidenceAccumulator.resetAxis(axis)
+
+        // ✅ DIRECT persistent state overschrijven met lege evidence
+        // Dit voorkomt dat oude data terugkomt bij volgende restore
+        try {
+            learningStore?.save(confidenceAccumulator, DateTime.now())
+            android.util.Log.i("FCLvNextObs", "Reset and saved empty state for axis: $axis")
+        } catch (_: Throwable) {
+            // Fail-safe: logging mag niet crashen
+            android.util.Log.e("FCLvNextObs", "Failed to save after reset for axis: $axis")
+        }
     }
 
 

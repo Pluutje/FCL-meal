@@ -76,22 +76,7 @@ class FCLvNextObsLearningStore(
     /**
      * Herstel learning-state (indien aanwezig & compatible)
      */
- /*   fun restore(
-        accumulator: FCLvNextObsConfidenceAccumulator
-    ) {
-        val json = prefs.get(KEY) ?: return
 
-        try {
-            val state =
-                gson.fromJson(json, StoredLearningState::class.java)
-
-            if (state.version != VERSION) return
-
-            accumulator.importState(state)
-        } catch (_: Throwable) {
-            // corrupt / oud → negeren
-        }
-    }    */
 
     fun restore(
         accumulator: FCLvNextObsConfidenceAccumulator

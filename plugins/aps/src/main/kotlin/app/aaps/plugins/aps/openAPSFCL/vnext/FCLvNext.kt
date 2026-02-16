@@ -2100,8 +2100,9 @@ class FCLvNext(
         reserveActionThisCycle = "NONE"
         reserveDeltaThisCycle = 0.0
 
+        val now = DateTime.now()
         val logRow = FCLvNextCsvLogRow(
-            ts = DateTime.now(),
+            ts = now,
             isNight = input.isNight,
             bg = input.bgNow,
             target = input.targetBG
@@ -2114,7 +2115,7 @@ class FCLvNext(
         var config = loadFCLvNextConfig(preferences, input.isNight)
 
         // 🍽️ MealIntent overlay (timing only, TTL-based)
-        val now = DateTime.now()
+
 
         preBolusController.applyDecay(now)
 
@@ -2175,7 +2176,8 @@ class FCLvNext(
                 type = type,
                 totalU = preBolusU,
                 validUntil = DateTime(mealIntent.validUntil),
-                now = now
+                now = now,
+                bgAtArm = input.bgNow  // ✅ NIEUW: Geef huidige BG door voor grace berekening
             )
 
 
@@ -3358,7 +3360,7 @@ class FCLvNext(
 
         if (preBolusFireAllowed) {
 
-            val chunk = preBolusController.computeChunk(config.maxSMB)
+            val chunk = preBolusController.computeChunk(now, config.maxSMB)
 
             if (chunk > 0.0) {
                 val before = commandedDose
@@ -3431,7 +3433,7 @@ class FCLvNext(
 
        // ✅ Alleen echte, zichtbare afleveringen loggen
         if (effectiveDeliveredNow >= minDeliveryU) {
-            deliveryHistory.addFirst(DateTime.now() to effectiveDeliveredNow)
+            deliveryHistory.addFirst(now to effectiveDeliveredNow)
             while (deliveryHistory.size > MAX_DELIVERY_HISTORY) {
                 deliveryHistory.removeLast()
             }

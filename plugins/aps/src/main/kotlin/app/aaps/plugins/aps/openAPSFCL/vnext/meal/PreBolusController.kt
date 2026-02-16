@@ -29,6 +29,8 @@ class PreBolusController @Inject constructor() {
         var armedAt: DateTime? = null,
         var validUntil: DateTime? = null,
 
+        var bgAtArm: Double = 0.0,
+
         // decay bookkeeping
         var decayStarted: Boolean = false,
         var remainingAtDecayStart: Double = 0.0
@@ -43,11 +45,12 @@ class PreBolusController @Inject constructor() {
         type: MealIntentType,
         totalU: Double,
         validUntil: DateTime,
-        now: DateTime
+        now: DateTime,
+        bgAtArm: Double  // ✅ NIEUWE PARAMETER
     ) {
         if (totalU <= 0.0) return
 
-        // voorkom her-armen van exact dezelfde episode
+// voorkom her-armen van exact dezelfde episode
         if (
             state.active &&
             state.mealType == type &&
@@ -56,6 +59,7 @@ class PreBolusController @Inject constructor() {
 
         state.active = true
         state.mealType = type
+        state.bgAtArm = bgAtArm  // ✅ NIEUW: Sla BG op voor grace berekening
 
         state.totalU = totalU
         state.deliveredU = 0.0
@@ -76,6 +80,7 @@ class PreBolusController @Inject constructor() {
         state.remainingU = 0.0
         state.armedAt = null
         state.validUntil = null
+        state.bgAtArm = 0.0  // ✅ NIEUW: Reset BG
         state.decayStarted = false
         state.remainingAtDecayStart = 0.0
     }
@@ -113,7 +118,7 @@ class PreBolusController @Inject constructor() {
     // ===============================
     // Chunking / delivery
     // ===============================
-    fun computeChunk(maxSmb: Double): Double =
+    fun computeChunk(now: DateTime, maxSmb: Double): Double =
         if (!isActive(DateTime.now())) 0.0
         else min(state.remainingU, maxSmb)
 
@@ -128,11 +133,24 @@ class PreBolusController @Inject constructor() {
     // ===============================
     // Decay
     // ===============================
-    private fun graceMinutes(type: MealIntentType): Int = when (type) {
-        MealIntentType.SNACK  -> 30
-        MealIntentType.SMALL  -> 5
-        MealIntentType.NORMAL -> 5
-        MealIntentType.LARGE  -> 5
+    private fun graceMinutes(type: MealIntentType): Int {
+        // Basis grace per type
+        val base = when (type) {
+            MealIntentType.SNACK  -> 30
+            MealIntentType.SMALL  -> 5
+            MealIntentType.NORMAL -> 5
+            MealIntentType.LARGE  -> 5
+        }
+
+        // ✅ NIEUW: BG bonus - meer tijd als BG al hoog
+        // Gebruiker wil snel eten bij hoge BG, geeft meer tijd voor voorbereiding
+        val bgBonus = when {
+            state.bgAtArm >= 10.0 -> 10  // BG 10+: 10 min extra (totaal 15 voor NORMAL/LARGE)
+            state.bgAtArm >= 8.5  -> 5   // BG 8.5-10: 5 min extra (totaal 10)
+            else -> 0
+        }
+
+        return base + bgBonus
     }
 
     private fun computeDecayFactor(now: DateTime): Double {
@@ -167,6 +185,7 @@ class PreBolusController @Inject constructor() {
     fun applyDecay(now: DateTime) {
         if (!state.active) return
         if (state.remainingU <= 0.0) return
+        if (isExpired(now)) return
 
         val decayFactor = computeDecayFactor(now)
 
@@ -196,14 +215,11 @@ class PreBolusController @Inject constructor() {
     }
 
     fun uiSnapshot(now: DateTime): PreBolusSnapshot? {
-        // 🔑 KOPPELING MET DE ENIGE WAARHEID
-        val intent = MealIntentRepository.get() ?: return null
-
-        // bestaande UI-logica blijft leidend
+        if (MealIntentRepository.get() == null) return null
         if (!isUiActive(now)) return null
-
         return buildSnapshot(now)
     }
+
 
 
     private fun buildSnapshot(now: DateTime): PreBolusSnapshot {
