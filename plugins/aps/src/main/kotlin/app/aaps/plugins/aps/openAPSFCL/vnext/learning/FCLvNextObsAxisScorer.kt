@@ -131,7 +131,7 @@ class FCLvNextObsAxisScorer(
         }
 
         val timing = scoreTiming(
-            episodeId = episode.id,
+            episode = episode,
             quality = quality,
             peakBg = peak,
             minutesToFirstInsulin = minutesToFirst,
@@ -139,8 +139,9 @@ class FCLvNextObsAxisScorer(
             tags = tags
         )
 
+
         val height = scoreHeight(
-            episodeId = episode.id,
+            episode = episode,
             quality = quality,
             peakBg = peak,
             nadirBg = nadir,
@@ -148,7 +149,7 @@ class FCLvNextObsAxisScorer(
         )
 
         val persistence = scorePersistence(
-            episodeId = episode.id,
+            episode = episode,
             quality = quality,
             peakBg = peak,
             nadirBg = nadir,
@@ -164,7 +165,7 @@ class FCLvNextObsAxisScorer(
     // TIMING (nu met EARLY-proxy)
     // ─────────────────────────────────────────────
     private fun scoreTiming(
-        episodeId: Long,
+        episode: Episode,
         quality: Double,
         peakBg: Double?,
         minutesToFirstInsulin: Int?,
@@ -174,7 +175,7 @@ class FCLvNextObsAxisScorer(
 
         if (peakBg == null) {
             return AxisObservation(
-                episodeId = episodeId,
+                episodeId = episode.id,
                 axis = Axis.TIMING,
                 outcome = AxisOutcome.UNKNOWN,
                 signalStrength = 0.0,
@@ -183,57 +184,88 @@ class FCLvNextObsAxisScorer(
             )
         }
 
-        // Als peak niet hoog is => timing niet problematiseren (jouw eis)
+        // ─────────────────────────────
+        // 1️⃣ MISSED INTERVENTION → altijd LATE
+        // ─────────────────────────────
+        if (episode.missedIntervention) {
+            val peakSignal = signalFromPeak(peakBg)
+            val strength = clamp01(0.60 * quality + 0.40 * peakSignal)
+
+            return AxisObservation(
+                episodeId = episode.id,
+                axis = Axis.TIMING,
+                outcome = AxisOutcome.LATE,
+                signalStrength = strength,
+                reason = "TIMING LATE: missedIntervention=true peak=${fmt(peakBg)}",
+                tags = tags
+            )
+        }
+
+        // ─────────────────────────────
+        // 2️⃣ Peak niet hoog → timing OK
+        // ─────────────────────────────
         if (peakBg <= cfg.highBgThresholdMmol) {
             return AxisObservation(
-                episodeId = episodeId,
+                episodeId = episode.id,
                 axis = Axis.TIMING,
                 outcome = AxisOutcome.OK,
                 signalStrength = clamp01(0.65 * quality),
-                reason = "TIMING OK: peak<=${fmt(cfg.highBgThresholdMmol)} (peak=${fmt(peakBg)})",
+                reason = "TIMING OK: peak<=${fmt(cfg.highBgThresholdMmol)}",
                 tags = tags
             )
         }
 
-        // Peak is hoog => timing relevant
+        // ─────────────────────────────
+        // 3️⃣ Geen insulin geregistreerd
+        // ─────────────────────────────
         if (minutesToFirstInsulin == null) {
             return AxisObservation(
-                episodeId = episodeId,
+                episodeId = episode.id,
                 axis = Axis.TIMING,
                 outcome = AxisOutcome.LATE,
                 signalStrength = clamp01(0.70 * quality + 0.30 * signalFromPeak(peakBg)),
-                reason = "TIMING LATE: peak>${fmt(cfg.highBgThresholdMmol)} but no meaningful insulin detected",
+                reason = "TIMING LATE: no meaningful insulin",
                 tags = tags
             )
         }
 
-        // EARLY-proxy:
-        // Als de eerste meaningful insulin heel snel kwam én nadir laag werd => EARLY
+        // ─────────────────────────────
+        // 4️⃣ EARLY
+        // ─────────────────────────────
         val early =
             minutesToFirstInsulin <= cfg.earlyMaxMinutesToFirstInsulin &&
                 nadirBg != null &&
                 nadirBg <= cfg.earlyNadirSafetyMmol
 
         if (early) {
-            val depth = clamp01((cfg.earlyNadirSafetyMmol - nadirBg!!) / 1.0) // 0..1
+            val depth = clamp01((cfg.earlyNadirSafetyMmol - nadirBg!!) / 1.0)
             val strength = clamp01(0.55 * quality + 0.45 * depth)
+
             return AxisObservation(
-                episodeId = episodeId,
+                episodeId = episode.id,
                 axis = Axis.TIMING,
                 outcome = AxisOutcome.EARLY,
                 signalStrength = strength,
-                reason = "TIMING EARLY: minToFirst=${minutesToFirstInsulin}m nadir=${fmt(nadirBg)} (<=${fmt(cfg.earlyNadirSafetyMmol)})",
+                reason = "TIMING EARLY: minToFirst=${minutesToFirstInsulin}",
                 tags = tags
             )
         }
 
-        // LATE:
-        val late = minutesToFirstInsulin >= cfg.timingLateMinMinutesToFirstInsulin
+        // ─────────────────────────────
+        // 5️⃣ LATE grens (mealIntent strenger)
+        // ─────────────────────────────
+        val lateThreshold =
+            if (episode.mealIntentActiveAtStart)
+                cfg.timingLateMinMinutesToFirstInsulin - 5   // strenger bij mealIntent
+            else
+                cfg.timingLateMinMinutesToFirstInsulin
+
+        val late = minutesToFirstInsulin >= lateThreshold
         val outcome = if (late) AxisOutcome.LATE else AxisOutcome.OK
 
         val latenessStrength =
             if (!late) 0.30
-            else clamp01((minutesToFirstInsulin - cfg.timingLateMinMinutesToFirstInsulin).toDouble() / 30.0)
+            else clamp01((minutesToFirstInsulin - lateThreshold).toDouble() / 30.0)
 
         val strength =
             clamp01(
@@ -243,20 +275,21 @@ class FCLvNextObsAxisScorer(
             )
 
         return AxisObservation(
-            episodeId = episodeId,
+            episodeId = episode.id,
             axis = Axis.TIMING,
             outcome = outcome,
             signalStrength = strength,
-            reason = "TIMING ${outcome.name}: peak=${fmt(peakBg)} minToFirst=${minutesToFirstInsulin} (late>=${cfg.timingLateMinMinutesToFirstInsulin})",
+            reason = "TIMING ${outcome.name}: minToFirst=${minutesToFirstInsulin} threshold=$lateThreshold",
             tags = tags
         )
     }
+
 
     // ─────────────────────────────────────────────
     // HEIGHT (nu met TOO_STRONG / TOO_WEAK placeholders)
     // ─────────────────────────────────────────────
     private fun scoreHeight(
-        episodeId: Long,
+        episode: Episode,
         quality: Double,
         peakBg: Double?,
         nadirBg: Double?,
@@ -265,7 +298,7 @@ class FCLvNextObsAxisScorer(
 
         if (peakBg == null) {
             return AxisObservation(
-                episodeId = episodeId,
+                episodeId = episode.id,
                 axis = Axis.HEIGHT,
                 outcome = AxisOutcome.UNKNOWN,
                 signalStrength = 0.0,
@@ -274,53 +307,59 @@ class FCLvNextObsAxisScorer(
             )
         }
 
-        // TOO_STRONG: nadir onder hypo-threshold (hard)
+        // TOO_STRONG
         if (nadirBg != null && nadirBg < cfg.hypoThresholdMmol) {
             val severity = clamp01((cfg.hypoThresholdMmol - nadirBg) / 1.0)
             val strength = clamp01(0.55 * quality + 0.45 * severity)
+
             return AxisObservation(
-                episodeId = episodeId,
+                episodeId = episode.id,
                 axis = Axis.HEIGHT,
                 outcome = AxisOutcome.TOO_STRONG,
                 signalStrength = strength,
-                reason = "HEIGHT TOO_STRONG: nadir=${fmt(nadirBg)} < hypo=${fmt(cfg.hypoThresholdMmol)}",
+                reason = "HEIGHT TOO_STRONG: nadir=${fmt(nadirBg)}",
                 tags = tags
             )
         }
 
-        // TOO_HIGH: peak boven 10
-        val tooHigh = peakBg > cfg.highBgThresholdMmol
-        if (tooHigh) {
+        // TOO_HIGH
+        if (peakBg > cfg.highBgThresholdMmol) {
             val overshoot = max(0.0, peakBg - cfg.highBgThresholdMmol)
             val overshootStrength = clamp01(overshoot / 4.0)
-            val strength = clamp01(0.60 * quality + 0.40 * overshootStrength)
+            val base = 0.60 * quality + 0.40 * overshootStrength
+
+            val strength =
+                if (episode.missedIntervention)
+                    clamp01(base * 1.15)
+                else
+                    clamp01(base)
+
             return AxisObservation(
-                episodeId = episodeId,
+                episodeId = episode.id,
                 axis = Axis.HEIGHT,
                 outcome = AxisOutcome.TOO_HIGH,
                 signalStrength = strength,
-                reason = "HEIGHT TOO_HIGH: peak=${fmt(peakBg)} > ${fmt(cfg.highBgThresholdMmol)}",
+                reason = "HEIGHT TOO_HIGH: peak=${fmt(peakBg)}",
                 tags = tags
             )
         }
 
-        // TOO_WEAK: in deze fase eigenlijk alleen zinvol als je later carbs/meal truth toevoegt.
-        // Nu laten we dit conservatief op OK als peak niet hoog is en geen hypo.
         return AxisObservation(
-            episodeId = episodeId,
+            episodeId = episode.id,
             axis = Axis.HEIGHT,
             outcome = AxisOutcome.OK,
             signalStrength = clamp01(0.65 * quality),
-            reason = "HEIGHT OK: peak=${fmt(peakBg)} nadir=${nadirBg?.let { fmt(it) } ?: "?"}",
+            reason = "HEIGHT OK",
             tags = tags
         )
     }
+
 
     // ─────────────────────────────────────────────
     // PERSISTENCE (nu met TOO_LONG proxy)
     // ─────────────────────────────────────────────
     private fun scorePersistence(
-        episodeId: Long,
+        episode: Episode,
         quality: Double,
         peakBg: Double?,
         nadirBg: Double?,
@@ -331,7 +370,7 @@ class FCLvNextObsAxisScorer(
 
         if (peakBg == null) {
             return AxisObservation(
-                episodeId = episodeId,
+                episodeId = episode.id,
                 axis = Axis.PERSISTENCE,
                 outcome = AxisOutcome.UNKNOWN,
                 signalStrength = 0.0,
@@ -343,7 +382,7 @@ class FCLvNextObsAxisScorer(
         // Als peak niet hoog was: persistence probleemloos (voor nu)
         if (peakBg <= cfg.highBgThresholdMmol) {
             return AxisObservation(
-                episodeId = episodeId,
+                episodeId = episode.id,
                 axis = Axis.PERSISTENCE,
                 outcome = AxisOutcome.OK,
                 signalStrength = clamp01(0.65 * quality),
@@ -366,7 +405,7 @@ class FCLvNextObsAxisScorer(
             val strength = clamp01(0.55 * quality + 0.45 * depth)
 
             return AxisObservation(
-                episodeId = episodeId,
+                episodeId = episode.id,
                 axis = Axis.PERSISTENCE,
                 outcome = AxisOutcome.TOO_LONG,
                 signalStrength = strength,
@@ -391,7 +430,7 @@ class FCLvNextObsAxisScorer(
             )
 
         return AxisObservation(
-            episodeId = episodeId,
+            episodeId = episode.id,
             axis = Axis.PERSISTENCE,
             outcome = outcome,
             signalStrength = strength,

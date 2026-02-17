@@ -9,7 +9,7 @@ class EpisodeTracker {
     // ─────────────────────────────
     // State
     // ─────────────────────────────
-    private enum class State { IDLE, ACTIVE }
+    private enum class State { IDLE, PENDING_RISE, ACTIVE }
 
     private var state: State = State.IDLE
     private var activeEpisode: Episode? = null
@@ -21,6 +21,11 @@ class EpisodeTracker {
     // End-detectie helpers
     private var iobBelowEndSince: DateTime? = null
     private var lastAnyInsulinAt: DateTime? = null
+
+    // Pending rise/mealIntent start
+    private var pendingStartAt: DateTime? = null
+    private var pendingMealIntent: Boolean = false
+    private var pendingTrigger: StartTrigger? = null
 
     // ─────────────────────────────
     // BG buffer (voor retro-start)
@@ -48,6 +53,7 @@ class EpisodeTracker {
     fun onFiveMinuteTick(
         now: DateTime,
         isNight: Boolean,
+        mealIntentActive: Boolean,  // ✅ nieuw
 
         bgMmol: Double,
         currentIob: Double,
@@ -68,7 +74,7 @@ class EpisodeTracker {
             commandedU.isFinite() && commandedU > 0.0
 
         // ─────────────────────────────
-        // START-detectie
+        // START-detectie (insuline)
         // ─────────────────────────────
         val startThresholdU =
             max(MIN_TRIGGER_U, maxBolusU * START_MIN_BOOST_FRAC)
@@ -82,20 +88,37 @@ class EpisodeTracker {
             currentIob <= START_IOB_MAX
 
         // ─────────────────────────────
+        // RISE-detectie (glycemische fase)
+        // ─────────────────────────────
+        val riseDetected = detectRise(now)
+
+        // ─────────────────────────────
         // State machine
         // ─────────────────────────────
         return when (state) {
 
             // ─────────────────────────
-            // IDLE → START
+            // IDLE
             // ─────────────────────────
             State.IDLE -> {
+
+                // 1) MealIntent of Rise → pending-start (wachten op insulin)
+                if (mealIntentActive || riseDetected) {
+                    state = State.PENDING_RISE
+                    pendingStartAt = now
+                    pendingMealIntent = mealIntentActive
+                    pendingTrigger =
+                        if (mealIntentActive) StartTrigger.MEAL_INTENT
+                        else StartTrigger.RISE
+                    return null
+                }
+
+                // 2) Direct start op meaningful insulin
                 if (isStartDose && startAllowedByIob) {
 
                     val retro = findRetroStart(now) ?: now
                     val clamp = lastEpisodeEndedAt
 
-                    // Start nooit vóór vorige episode laten vallen
                     val startAt =
                         if (clamp != null && retro.isBefore(clamp)) clamp else retro
 
@@ -106,21 +129,111 @@ class EpisodeTracker {
                         isNight = isNight,
                         excluded = false,
                         exclusionReason = null,
-                        qualityScore = clamp(consistency)
+                        qualityScore = clamp01(consistency),
+
+                        mealIntentActiveAtStart = mealIntentActive,
+                        startTrigger = StartTrigger.INSULIN,
+                        firstMeaningfulInsulinAt = now,
+                        delayToFirstInsulinMin = 0,
+                        missedIntervention = false
                     )
 
                     activeEpisode = ep
                     state = State.ACTIVE
                     iobBelowEndSince = null
 
-                    EpisodeEvent.Started(ep)
-                } else {
-                    null
+                    return EpisodeEvent.Started(ep)
                 }
+
+                null
             }
 
             // ─────────────────────────
-            // ACTIVE → END
+            // PENDING_RISE (rise/mealIntent gezien, maar nog geen insulin)
+            // ─────────────────────────
+            State.PENDING_RISE -> {
+
+                val startAt = pendingStartAt ?: now
+                val waited = minutesBetween(startAt, now)
+
+                // Zodra insulin start: episode wordt ACTIVE
+                if (isStartDose) {
+                    val delay = minutesBetween(startAt, now)
+                    val clamp = lastEpisodeEndedAt
+
+                    val safeStartAt =
+                        if (clamp != null && startAt.isBefore(clamp)) clamp else startAt
+
+                    val ep = Episode(
+                        id = nextId++,
+                        startTime = safeStartAt,
+                        endTime = null,
+                        isNight = isNight,
+                        excluded = false,
+                        exclusionReason = null,
+                        qualityScore = clamp01(consistency),
+
+                        mealIntentActiveAtStart = pendingMealIntent,
+                        startTrigger = pendingTrigger ?: StartTrigger.RISE,
+                        firstMeaningfulInsulinAt = now,
+                        delayToFirstInsulinMin = delay,
+                        missedIntervention = false
+                    )
+
+                    activeEpisode = ep
+                    state = State.ACTIVE
+                    iobBelowEndSince = null
+
+                    // pending reset
+                    pendingStartAt = null
+                    pendingMealIntent = false
+                    pendingTrigger = null
+
+                    return EpisodeEvent.Started(ep)
+                }
+
+                // Timeout → “gemiste interventie”: we sluiten meteen een episode af
+                if (waited >= PENDING_TIMEOUT_MIN) {
+                    val clamp = lastEpisodeEndedAt
+                    val safeStartAt =
+                        if (clamp != null && startAt.isBefore(clamp)) clamp else startAt
+
+                    val ep = Episode(
+                        id = nextId++,
+                        startTime = safeStartAt,
+                        endTime = now,
+                        isNight = isNight,
+                        excluded = false,
+                        exclusionReason = null,
+                        qualityScore = clamp01(consistency),
+
+                        mealIntentActiveAtStart = pendingMealIntent,
+                        startTrigger = pendingTrigger ?: StartTrigger.RISE,
+                        firstMeaningfulInsulinAt = null,
+                        delayToFirstInsulinMin = null,
+                        missedIntervention = true
+                    )
+
+                    // terug naar IDLE
+                    state = State.IDLE
+                    activeEpisode = null
+                    iobBelowEndSince = null
+
+                    // pending reset
+                    pendingStartAt = null
+                    pendingMealIntent = false
+                    pendingTrigger = null
+
+                    lastEpisodeEndedAt = now
+
+                    return EpisodeEvent.Finished(ep)
+                }
+
+                null
+            }
+
+            // ─────────────────────────
+            // ACTIVE → END (jouw bestaande logica, 1-op-1 overgenomen)
             // ─────────────────────────
             State.ACTIVE -> {
                 val ep = activeEpisode ?: return null
@@ -193,28 +306,46 @@ class EpisodeTracker {
         return window.minByOrNull { it.bg }?.time
     }
 
+    /**
+     * Detecteer een "stijgingsfase" los van insulin.
+     * Heel simpel en tunable: stijging >= 0.8 mmol in ~15-30 min.
+     */
+    private fun detectRise(now: DateTime): Boolean {
+        if (bgBuf.size < 6) return false
+
+        val last = bgBuf.last()
+
+        val ref = bgBuf.firstOrNull {
+            minutesBetween(it.time, now) in 15..30
+        } ?: return false
+
+        val delta = last.bg - ref.bg
+        return delta >= RISE_DELTA_MMOL
+    }
+
     private fun resetAll() {
         state = State.IDLE
         activeEpisode = null
         iobBelowEndSince = null
         insulinBuf.clear()
+
+        // pending ook resetten
+        pendingStartAt = null
+        pendingMealIntent = false
+        pendingTrigger = null
     }
 
-    private fun clamp(x: Double): Double =
+    private fun clamp01(x: Double): Double =
         min(1.0, max(0.0, x))
 
     private fun minutesBetween(a: DateTime, b: DateTime): Int =
         ((b.millis - a.millis) / 60000L).toInt()
-
-
-
 
     // ─────────────────────────────
     // Constants
     // ─────────────────────────────
     companion object {
         private const val INSULIN_WINDOW_MIN = 25
-
         private const val BG_BUFFER_TICKS = 40
 
         private const val MIN_TRIGGER_U = 0.15
@@ -225,6 +356,10 @@ class EpisodeTracker {
         private const val IOB_END_THRESHOLD = 0.25
         private const val END_NO_INSULIN_MIN = 30
         private const val END_STABLE_MIN = 20
+
+        // nieuw:
+        private const val PENDING_TIMEOUT_MIN = 40
+        private const val RISE_DELTA_MMOL = 0.8
     }
 
     // ─────────────────────────────

@@ -109,9 +109,7 @@ class FCLvNextObsOrchestrator(
             now = now,
             isNight = isNight,
 
-        //    rescueConfirmed = rescueConfirmed,
-        //    downtrendLocked = downtrendLocked,
-        //    manualBolusDetected = manualBolusDetected,
+            mealIntentActive = mealSignalActive,
 
             bgMmol = bgMmol,
             currentIob = currentIob,
@@ -121,6 +119,7 @@ class FCLvNextObsOrchestrator(
 
             consistency = consistency
         )
+
 
 
         rebuildSnapshot(now)
