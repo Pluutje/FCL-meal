@@ -34,6 +34,7 @@ enum class AxisOutcome {
     // TIMING
     EARLY,
     LATE,
+    LATE_PEAK_INTERVENTION,
 
     // HEIGHT
     TOO_HIGH,      // peak boven grens (10)
@@ -132,12 +133,20 @@ class FCLvNextObsAxisScorer(
 
         val timing = scoreTiming(
             episode = episode,
+            summary = summary,
             quality = quality,
             peakBg = peak,
             minutesToFirstInsulin = minutesToFirst,
             nadirBg = nadir,
             tags = tags
         )
+        val timingLateOrPeak =
+            timing.outcome == AxisOutcome.LATE ||
+                timing.outcome == AxisOutcome.LATE_PEAK_INTERVENTION
+
+        val timingIsLatePeak =
+            timing.outcome == AxisOutcome.LATE_PEAK_INTERVENTION
+
 
 
         val height = scoreHeight(
@@ -145,8 +154,14 @@ class FCLvNextObsAxisScorer(
             quality = quality,
             peakBg = peak,
             nadirBg = nadir,
+            timeBelowTargetMin = summary.timeBelowTargetMin,
+            timeBelowHypoMin = summary.timeBelowHypoMin,
+            durationMin = summary.durationMin,
+            timingLateOrPeak = timingLateOrPeak,
+            timingIsLatePeak = timingIsLatePeak,
             tags = tags
         )
+
 
         val persistence = scorePersistence(
             episode = episode,
@@ -166,6 +181,7 @@ class FCLvNextObsAxisScorer(
     // ─────────────────────────────────────────────
     private fun scoreTiming(
         episode: Episode,
+        summary: FCLvNextObsEpisodeSummary,
         quality: Double,
         peakBg: Double?,
         minutesToFirstInsulin: Int?,
@@ -252,6 +268,38 @@ class FCLvNextObsAxisScorer(
         }
 
         // ─────────────────────────────
+// 5️⃣ LATE_PEAK_INTERVENTION
+// Insuline rond of na peak bij hoge piek
+// ─────────────────────────────
+
+        val phase = summary.phaseOfFirstInsulin
+
+        if (peakBg > cfg.highBgThresholdMmol &&
+            phase != null &&
+            phase >= 0.8
+        ) {
+            val phaseExcess = clamp01((phase - 0.8) / 0.6)
+            val peakSignal = signalFromPeak(peakBg)
+
+            val strength =
+                clamp01(
+                    0.50 * quality +
+                        0.30 * peakSignal +
+                        0.20 * phaseExcess
+                )
+
+            return AxisObservation(
+                episodeId = episode.id,
+                axis = Axis.TIMING,
+                outcome = AxisOutcome.LATE_PEAK_INTERVENTION,
+                signalStrength = strength,
+                reason = "TIMING LATE_PEAK: phase=${fmt(phase)} peak=${fmt(peakBg)}",
+                tags = tags
+            )
+        }
+
+
+        // ─────────────────────────────
         // 5️⃣ LATE grens (mealIntent strenger)
         // ─────────────────────────────
         val lateThreshold =
@@ -293,8 +341,14 @@ class FCLvNextObsAxisScorer(
         quality: Double,
         peakBg: Double?,
         nadirBg: Double?,
+        timeBelowTargetMin: Int,
+        timeBelowHypoMin: Int,
+        durationMin: Int,
+        timingLateOrPeak: Boolean,
+        timingIsLatePeak: Boolean,
         tags: Map<String, String>
     ): AxisObservation {
+
 
         if (peakBg == null) {
             return AxisObservation(
@@ -310,7 +364,18 @@ class FCLvNextObsAxisScorer(
         // TOO_STRONG
         if (nadirBg != null && nadirBg < cfg.hypoThresholdMmol) {
             val severity = clamp01((cfg.hypoThresholdMmol - nadirBg) / 1.0)
-            val strength = clamp01(0.55 * quality + 0.45 * severity)
+            val hypoTimeFactor =
+                clamp01(timeBelowHypoMin.toDouble() / 20.0)   // 20m = zwaar signaal
+            val targetTimeFactor =
+                clamp01(timeBelowTargetMin.toDouble() / 40.0) // 40m = structureel te laag
+            val strength =
+                clamp01(
+                    0.45 * quality +
+                        0.25 * severity +
+                        0.20 * hypoTimeFactor +
+                        0.10 * targetTimeFactor
+                )
+
 
             return AxisObservation(
                 episodeId = episode.id,
@@ -322,11 +387,47 @@ class FCLvNextObsAxisScorer(
             )
         }
 
+        // Mild overshoot: langdurig onder target maar niet hypo
+        if (timeBelowTargetMin >= 30 && (nadirBg == null || nadirBg >= cfg.hypoThresholdMmol)) {
+
+            val undershootRatio =
+                clamp01(timeBelowTargetMin.toDouble() / durationMin)
+
+            val strength =
+                clamp01(
+                    0.50 * quality +
+                        0.50 * undershootRatio
+                )
+
+            return AxisObservation(
+                episodeId = episode.id,
+                axis = Axis.HEIGHT,
+                outcome = AxisOutcome.TOO_STRONG,
+                signalStrength = strength,
+                reason = "HEIGHT TOO_STRONG: prolonged TBT=${timeBelowTargetMin}m",
+                tags = tags
+            )
+        }
+
+
         // TOO_HIGH
+
         if (peakBg > cfg.highBgThresholdMmol) {
             val overshoot = max(0.0, peakBg - cfg.highBgThresholdMmol)
             val overshootStrength = clamp01(overshoot / 4.0)
-            val base = 0.60 * quality + 0.40 * overshootStrength
+
+            var base = 0.60 * quality + 0.40 * overshootStrength
+
+            // 🔗 Interactie: als insulin pas laat / rond de piek komt,
+            // dan is de oorzaak waarschijnlijk TIMING i.p.v. totale HEIGHT.
+            if (timingLateOrPeak) {
+                base *= 0.72   // ~28% dempen
+            }
+
+            // Als het specifiek LATE_PEAK_INTERVENTION is, nog iets sterker dempen.
+            if (timingIsLatePeak) {
+                base *= 0.85   // extra demping
+            }
 
             val strength =
                 if (episode.missedIntervention)
@@ -334,15 +435,23 @@ class FCLvNextObsAxisScorer(
                 else
                     clamp01(base)
 
+            val reasonExtra =
+                when {
+                    timingIsLatePeak -> " (timing late-peak)"
+                    timingLateOrPeak -> " (timing late)"
+                    else -> ""
+                }
+
             return AxisObservation(
                 episodeId = episode.id,
                 axis = Axis.HEIGHT,
                 outcome = AxisOutcome.TOO_HIGH,
                 signalStrength = strength,
-                reason = "HEIGHT TOO_HIGH: peak=${fmt(peakBg)}",
+                reason = "HEIGHT TOO_HIGH$reasonExtra: peak=${fmt(peakBg)}",
                 tags = tags
             )
         }
+
 
         return AxisObservation(
             episodeId = episode.id,

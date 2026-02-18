@@ -22,7 +22,6 @@ class FCLvNextObsOrchestrator(
     private val summarizer: FCLvNextObsEpisodeSummarizer,
     private val axisScorer: FCLvNextObsAxisScorer,
     private val confidenceAccumulator: FCLvNextObsConfidenceAccumulator,
-    private val adviceEmitter: FCLvNextObsAdviceEmitter,
 ) {
 
     /**
@@ -68,7 +67,7 @@ class FCLvNextObsOrchestrator(
         commandedU: Double,
         maxBolusU: Double,
         manualBolusDetected: Boolean
-    ): FCLvNextObsAdviceBundle? {
+    )  {
 
         checkForSettingChanges()
 
@@ -126,7 +125,7 @@ class FCLvNextObsOrchestrator(
 
 
         // Alleen iets doen bij einde van episode
-        if (event !is EpisodeEvent.Finished) return null
+        if (event !is EpisodeEvent.Finished) return
 
         val episode = event.episode
 
@@ -149,13 +148,14 @@ class FCLvNextObsOrchestrator(
         }
 
         // Excluded episodes tellen niet mee voor learning
-        if (episode.excluded) return null
+        if (episode.excluded) return
 
         // 1️⃣ Samenvatten (feiten)
         val summary =
             summarizer.summarize(
                 episode = episode,
-                predictedPeakAtStart = predictedPeakAtStart
+                predictedPeakAtStart = predictedPeakAtStart,
+                targetMmol = targetMmol
             )
 
         // 2️⃣ Scoren langs assen
@@ -181,37 +181,10 @@ class FCLvNextObsOrchestrator(
         }
 
         // 4️⃣ Adviezen genereren (indien structureel)
-        val topSignals =
-            confidenceAccumulator.getTopSignals(now)
-
-        if (topSignals.isEmpty()) {
-            // debug bundle teruggeven zodat je ziet dat pipeline draait
-            val snap = confidenceAccumulator.buildSnapshot(now)
-            val debug = buildString {
-                append("[OBS] Episode #${episode.id} finished. Buckets:\n")
-                for ((axis, list) in snap.perAxis) {
-                    val top = list.firstOrNull()
-                    if (top != null) {
-                        append(" - $axis: top=${top.outcome} conf=${"%.2f".format(top.confidence)} n=${top.supportCount}\n")
-                    } else {
-                        append(" - $axis: (no evidence)\n")
-                    }
-                }
-            }.trim()
-
-            return FCLvNextObsAdviceBundle(
-                createdAt = now,
-                advices = emptyList(),
-                debugSummary = debug
-            )
-        }
-
-
-
-        return adviceEmitter.emit(
-            now = now,
-            topSignals = topSignals
-        )
+        // 4️⃣ Geen AdviceEmitter meer.
+        // We houden wél de snapshot up-to-date zodat de UI alles kan tonen.
+        rebuildSnapshot(now)
+        return
     }
 
     private fun checkForSettingChanges() {

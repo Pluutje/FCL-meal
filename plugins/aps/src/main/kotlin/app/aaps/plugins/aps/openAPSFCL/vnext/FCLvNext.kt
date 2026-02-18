@@ -340,6 +340,11 @@ private const val FAST_MICRO_MAX_U = 0.15
 private const val MICRO_IOB_MAX = 0.45          // micro ramp alleen als er nog ruimte is
 private const val MICRO_MIN_CONS = 0.45
 
+// ─────────────────────────────────────────────
+// 🧯 EARLY RESET (stop early momentum bij afremmen)
+// ─────────────────────────────────────────────
+private const val EARLY_RESET_ACCEL = -0.02   // zodra accel negatief wordt (licht)
+private const val EARLY_RESET_SLOPE = 0.00    // of zodra macro slope niet meer positief is
 
 
 
@@ -1549,6 +1554,7 @@ private data class PostPeakSummary(
     val commitBlocked: Boolean,
     val commitFactor: Double,
     val noStash: Boolean,
+    val sensorBlip: Boolean,
     val reason: String
 )
 
@@ -1580,6 +1586,28 @@ private fun evaluatePostPeak(
             ctx.acceleration <= 0.06 &&      // jouw 13:47 accel=0.03 moet dit raken
             fastPlateau
 
+    // ✅ NIEUW: sensor-blip / trend conflict guard
+// Slow-lane (macro) daalt, maar fast-lane (laatste 5-10m) lijkt ineens te stijgen.
+// Dit is typisch CGM-spike gedrag → niet corrigeren.
+    val slowFalling = ctx.slope <= -0.30
+    val fastRising = (ctx.recentSlope >= 1.50) || (ctx.recentDelta5m >= 0.20)
+
+    val sensorBlip =
+        episodeLike && reliable &&
+            ctx.deltaToTarget >= 1.0 &&
+            ctx.iobRatio >= 0.25 &&
+            slowFalling && fastRising
+
+// ✅ NIEUW: tail-suppress (post-peak) ook BUITEN absorptionWindow
+// Als we episode-like zijn en macro niet stijgt (omkeer/afremmen), dan suppress.
+    val tailSuppress =
+        episodeLike && reliable &&
+            !isMacroRising(ctx, peak, config) &&
+            ctx.deltaToTarget >= 1.0 &&
+            ctx.iobRatio >= 0.30 &&
+            ctx.slope <= 0.0
+
+
 
     // Basale post-peak kenmerken
     val flattening = ctx.acceleration <= 0.05
@@ -1593,9 +1621,14 @@ private fun evaluatePostPeak(
             (inAbsorption &&
                 (ctx.slope <= config.peakSlopeThreshold || ctx.acceleration <= config.peakAccelThreshold)
                 )
-                // ✅ NIEUW: pre-commit top/plateau suppress
+                // bestaande pre-commit top/plateau suppress
                 || preCommitTop
+                // ✅ NIEUW
+                || tailSuppress
+                // ✅ NIEUW
+                || sensorBlip
             )
+
 
 
     // LOCKOUT: hard, ook tijdens absorption
@@ -1603,24 +1636,26 @@ private fun evaluatePostPeak(
         (0.30 + 0.07 * ctx.deltaToTarget).coerceIn(0.30, 0.70)
     val lockout =
         reliable && (
-            // bestaande lockout (post-commit)
             (inAbsorption &&
                 ((ctx.slope <= config.peakSlopeThreshold) || (ctx.acceleration <= config.peakAccelThreshold)) &&
                 (ctx.iobRatio >= dynamicIobThreshold)
                 )
-                // ✅ NIEUW: pre-commit lockout als het écht top/plateau is met al genoeg IOB
                 || (preCommitTop && ctx.iobRatio >= 0.55)
+                // ✅ NIEUW: bij sensorBlip liever hard stoppen met pushen
+                || sensorBlip
             )
+
 
 
     // COMMIT BLOCK: voorkomen van “commit na omkeer”
     val commitBlocked =
         reliable && (
-            // bestaande omkeer-blok
             (ctx.acceleration < -0.05 && ctx.iobRatio >= 0.45)
-                // ✅ NIEUW: ook blokkeren bij duidelijke plateau/top met al genoeg IOB
                 || (preCommitTop && ctx.iobRatio >= 0.45)
+                // ✅ NIEUW
+                || sensorBlip
             )
+
 
 
 
@@ -1641,8 +1676,9 @@ private fun evaluatePostPeak(
 
     val reason =
         "POSTPEAK: suppress=$suppress lockout=$lockout commitBlocked=$commitBlocked " +
-            "commitFactor=${"%.2f".format(commitFactor)} noStash=$noStash " +
-            "iobR=${"%.2f".format(ctx.iobRatio)} slope=${"%.2f".format(ctx.slope)} accel=${"%.2f".format(ctx.acceleration)}"
+            "commitFactor=${"%.2f".format(commitFactor)} noStash=$noStash sensorBlip=$sensorBlip " +
+            "iobR=${"%.2f".format(ctx.iobRatio)} slope=${"%.2f".format(ctx.slope)} accel=${"%.2f".format(ctx.acceleration)} " +
+            "rSlope=${"%.2f".format(ctx.recentSlope)} rΔ5m=${"%.2f".format(ctx.recentDelta5m)}"
 
     return PostPeakSummary(
         suppress = suppress,
@@ -1650,8 +1686,10 @@ private fun evaluatePostPeak(
         commitBlocked = commitBlocked,
         commitFactor = commitFactor,
         noStash = noStash,
+        sensorBlip = sensorBlip,          // ✅ NIEUW
         reason = reason
     )
+
 }
 
 
@@ -1660,7 +1698,8 @@ private fun trajectoryDampingFactor(
     mealSignal: MealSignal,
     bgZone: BgZone,
     config: FCLvNextConfig,
-    peak: PeakEstimate
+    peak: PeakEstimate,
+    suppressForPeak: Boolean            // ✅ NIEUW
 ): Double {
 
 
@@ -1709,11 +1748,17 @@ private fun trajectoryDampingFactor(
     }
 
     // 5) Meal: als we in meal staan, minder streng (want stijging kan “legit” zijn)
-    val mealRelax = when (mealSignal.state) {
+    val baseMealRelax = when (mealSignal.state) {
         MealState.NONE -> 1.0
         MealState.UNCERTAIN -> 0.75
         MealState.CONFIRMED -> 0.55
     }
+
+// ✅ NIEUW: na (post-)peak/afremmen géén “relax” — juist strenger remmen
+    val mealRelax =
+        if (suppressForPeak || ctx.slope <= 0.0 || ctx.acceleration < 0.0) 1.0
+        else baseMealRelax
+
 
     // Combineer:
     // - Penalties versterken elkaar
@@ -1765,6 +1810,51 @@ private fun isEarlyProtectionActive(
 
     return true
 }
+
+private fun maybeResetEarlyOnDecel(
+    ctx: FCLvNextContext,
+    peak: PeakEstimate,
+    now: DateTime,
+    status: StringBuilder
+): Boolean {
+
+    // alleen zinvol als early al “aan” stond
+    if (earlyDose.stage <= 0) return false
+
+// ─────────────────────────────────────────────
+// 🧠 Momentum fade detection (agressiever lerend)
+// ─────────────────────────────────────────────
+
+    val classicalDecel =
+        (ctx.acceleration <= EARLY_RESET_ACCEL) ||
+            (ctx.slope <= EARLY_RESET_SLOPE && ctx.recentSlope <= 0.0)
+
+
+// Nieuwe, gevoeligere momentum detectie
+    val momentumFade =
+        ctx.acceleration <= 0.0 &&                  // versnelling weg
+            ctx.recentDelta5m <= -0.02 &&                 // 5m delta niet meer positief
+            ctx.iobRatio >= (0.30 + 0.05 * smooth01(ctx.deltaToTarget / 4.0)) &&     // al insuline aan boord
+            ctx.deltaToTarget >= 0.8 &&                 // nog duidelijk boven target
+            peak.state != PeakPredictionState.CONFIRMED // niet al in peak-lock
+
+    val decel = classicalDecel || momentumFade
+
+
+    if (!decel) return false
+
+    // reset state + voorkom follow-up “impulse” gedrag
+    earlyDose = EarlyDoseContext()
+    earlyConfirmDone = false
+
+    status.append(
+        "EARLY RESET (deceleration): " +
+            "slope=${"%.2f".format(ctx.slope)} accel=${"%.2f".format(ctx.acceleration)} " +
+            "peakState=${peak.state}\n"
+    )
+    return true
+}
+
 
 private fun updateDowntrendGate(
     ctx: FCLvNextContext,
@@ -2529,7 +2619,20 @@ class FCLvNext(
         val postPeak = evaluatePostPeak(ctx, mealSignal, peak, now, config)
         status.append(postPeak.reason + "\n")
 
+        // ✅ NIEUW: early reset zodra afremmen/omkeer start
+        val earlyResetThisCycle = maybeResetEarlyOnDecel(ctx, peak, now, status)
+
         val suppressForPeak = postPeak.suppress
+
+        // ✅ NIEUW: Sensor-blip guard → GEEN insulin pushen op “valse opleving”
+        if (postPeak.sensorBlip) {
+            status.append(
+                "SENSOR-BLIP GUARD: slowFalling(slope=${"%.2f".format(ctx.slope)}) " +
+                    "but fastRising(recentSlope=${"%.2f".format(ctx.recentSlope)} recentΔ5m=${"%.2f".format(ctx.recentDelta5m)}) → finalDose=0\n"
+            )
+            finalDose = 0.0
+        }
+
 
 // ─────────────────────────────────────────────
 // 🍽️ MICRO RAMP (earlier IOB, no commit)
@@ -2591,12 +2694,13 @@ class FCLvNext(
          //   val zoneEnum = computeBgZone(ctx)
             val fastLaneDip = (ctx.recentDelta5m <= -0.06 || ctx.recentSlope <= -0.20)
             val trajFactor =
-                if (earlyStageCandidate > 0 && !fastLaneDip) {
+                if (earlyStageCandidate > 0 && !fastLaneDip && !suppressForPeak && !postPeak.sensorBlip) {
                     status.append("Trajectory BYPASS (earlyStage=$earlyStageCandidate)\n")
                     1.0
                 } else {
-                    trajectoryDampingFactor(ctx, mealSignal, zoneEnum, config, peak)
+                    trajectoryDampingFactor(ctx, mealSignal, zoneEnum, config, peak, suppressForPeak)
                 }
+
 
             val before = finalDose
             finalDose *= trajFactor
@@ -2614,7 +2718,14 @@ class FCLvNext(
 
 // Apply early floor AFTER dampers (maar vóór cap/commit)
 // ✅ NIET toepassen als we al aan het afremmen zijn (accel < 0)
-        if (early.active && early.targetU > 0.0 && ctx.acceleration >= 0.0) {
+        if (
+            early.active &&
+            early.targetU > 0.0 &&
+            ctx.acceleration >= 0.0 &&
+            !suppressForPeak &&
+            !postPeak.sensorBlip &&
+            !earlyResetThisCycle
+        ) {
 
             val cappedEarly = minOf(early.targetU, accessCap)
 
@@ -2635,9 +2746,12 @@ class FCLvNext(
             status.append(
                 "EARLY FLOOR: ${"%.2f".format(before)}→${"%.2f".format(finalDose)}U\n"
             )
-        } else if (early.active && early.targetU > 0.0 && ctx.acceleration < 0.0) {
-            status.append("EARLY FLOOR skipped (accel<0)\n")
+        } else if (early.active && early.targetU > 0.0 && earlyResetThisCycle) {
+            status.append("EARLY FLOOR skipped (early reset this cycle)\n")
+        } else if (early.active && early.targetU > 0.0 && (suppressForPeak || postPeak.sensorBlip)) {
+            status.append("EARLY FLOOR skipped (postPeak suppress/sensorBlip)\n")
         }
+
 
         // ─────────────────────────────────────────────
         // 🟥 HEIGHT ESCALATION (single, smooth factor)

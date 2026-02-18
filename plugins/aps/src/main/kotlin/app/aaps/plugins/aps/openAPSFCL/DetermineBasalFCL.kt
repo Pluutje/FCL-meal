@@ -52,12 +52,12 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.learning.EpisodeTracker
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsEpisodeSummarizer
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsAxisScorer
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsConfidenceAccumulator
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsAdviceEmitter
+
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.EmptyBgHistoryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.EmptyInsulinDeliveryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextBgHistoryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextTrends
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsAdviceEmitterConfig
+
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsBgProviderAdapter
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsInsulinDeliveryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsLearningStore
@@ -112,11 +112,9 @@ class DetermineBasalFCL @Inject constructor(
             axisScorer = FCLvNextObsAxisScorer(),
             confidenceAccumulator = FCLvNextObsConfidenceAccumulator().also { acc ->
                 obsLearningStore.restore(acc)
-            },
-            adviceEmitter = FCLvNextObsAdviceEmitter(
-                FCLvNextObsAdviceEmitterConfig()
-            )
+            }
         )
+
 
     @Volatile
     private var lastLearningSnapshot: FCLvNextObsSnapshot? = null
@@ -484,11 +482,9 @@ class DetermineBasalFCL @Inject constructor(
                         manualBolusDetected = manualBolusDetected
                     )
                 } catch (t: Throwable) {
-                    // 🔒 HARD SAFETY NET
                     consoleError.add(
                         "[OBS] ❌ disabled for this cycle: ${t.javaClass.simpleName}: ${t.message}"
                     )
-                    null
                 }
 
 

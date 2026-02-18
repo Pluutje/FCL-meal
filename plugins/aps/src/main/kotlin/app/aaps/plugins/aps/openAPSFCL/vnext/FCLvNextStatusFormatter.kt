@@ -468,6 +468,7 @@ Nog geen observaties beschikbaar
                         "TOO_STRONG" -> "Te sterk"
                         "TOO_WEAK" -> "Te zwak"
                         "LATE" -> "Te laat"
+                        "LATE_PEAK_INTERVENTION" -> "Te laat (rond piek)"
                         "EARLY" -> "Te vroeg"
                         "TOO_SHORT" -> "Te kort"
                         "TOO_LONG" -> "Te lang"
@@ -571,12 +572,12 @@ ${metricsText ?: "Nog geen data"}
 
         return """
 ════════════════════════
- 🧠 FCL meal V4 v1.2.7
+ 🧠 FCL meal V4 v1.3.0
  
 ════════════════════════
-• Profiel              : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}
-• Meal detect          : ${mealDetectLabel(prefs.get(StringKey.fcl_vnext_meal_detect_speed))}
-• Correctiestijl       : ${correctionStyleLabel(prefs.get(StringKey.fcl_vnext_correction_style))}
+• Height (sterkte)     : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}
+• Timing (reactietijd) : ${mealDetectLabel(prefs.get(StringKey.fcl_vnext_meal_detect_speed))}
+• Persistentie        : ${correctionStyleLabel(prefs.get(StringKey.fcl_vnext_correction_style))}
 • Insulineverdeling    : ${doseDistributionLabel(prefs.get(StringKey.fcl_vnext_dose_distribution_style))}
 
 

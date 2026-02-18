@@ -61,6 +61,7 @@ data class FCLvNextObsConfidenceAccumulatorConfig(
     val storedOutcomes: Set<AxisOutcome> = setOf(
         AxisOutcome.EARLY,
         AxisOutcome.LATE,
+        AxisOutcome.LATE_PEAK_INTERVENTION,
         AxisOutcome.TOO_HIGH,
         AxisOutcome.TOO_STRONG,
         AxisOutcome.TOO_SHORT,
@@ -95,6 +96,25 @@ class FCLvNextObsConfidenceAccumulator(
      * - Geef alleen observations door van episodes die NIET excluded zijn.
      * - OK/UNKNOWN worden automatisch genegeerd.
      */
+    // ─────────────────────────────────────────────
+    // 🔹 Strength adjustment (TBT vs HYPO)
+    // ─────────────────────────────────────────────
+    private fun adjustedStrength(obs: AxisObservation): Double {
+        var s = clamp01(obs.signalStrength)
+
+        // Alleen relevant voor HEIGHT.TOO_STRONG
+        if (obs.axis == Axis.HEIGHT && obs.outcome == AxisOutcome.TOO_STRONG) {
+            when (obs.tags["LOW_KIND"]) {
+                "HYPO" -> s *= 1.0
+                "TBT"  -> s *= 0.55   // ✅ TBT telt minder zwaar dan echte hypo
+            }
+        }
+
+        return clamp01(s)
+    }
+
+
+
     fun ingestEpisode(
         now: DateTime,
         isNight: Boolean,
@@ -118,7 +138,7 @@ class FCLvNextObsConfidenceAccumulator(
                     episodeId = obs.episodeId,
                     axis = obs.axis,
                     outcome = obs.outcome,
-                    strength = clamp01(obs.signalStrength),
+                    strength = adjustedStrength(obs),
                     weight = combinedWeight
                 )
             )
@@ -283,10 +303,12 @@ class FCLvNextObsConfidenceAccumulator(
 
         val opposites: List<AxisOutcome> = when (axis) {
             Axis.TIMING -> when (outcome) {
-                AxisOutcome.EARLY -> listOf(AxisOutcome.LATE)
+                AxisOutcome.EARLY -> listOf(AxisOutcome.LATE, AxisOutcome.LATE_PEAK_INTERVENTION)
                 AxisOutcome.LATE -> listOf(AxisOutcome.EARLY)
+                AxisOutcome.LATE_PEAK_INTERVENTION -> listOf(AxisOutcome.EARLY)
                 else -> emptyList()
             }
+
 
             Axis.HEIGHT -> when (outcome) {
                 AxisOutcome.TOO_HIGH -> listOf(AxisOutcome.TOO_STRONG)

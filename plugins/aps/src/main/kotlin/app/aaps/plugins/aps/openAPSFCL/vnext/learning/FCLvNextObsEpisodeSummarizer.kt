@@ -34,6 +34,8 @@ data class FCLvNextObsEpisodeSummary(
     val nadirTime: DateTime?,
 
     val timeAbove10Min: Int,
+    val timeBelowTargetMin: Int,
+    val timeBelowHypoMin: Int,
 
     // Post-peak gedrag
     val postPeakDurationMin: Int?,
@@ -45,6 +47,8 @@ data class FCLvNextObsEpisodeSummary(
     val totalInsulinU: Double,
     val firstMeaningfulInsulinAt: DateTime?,
     val minutesToFirstInsulin: Int?,
+    val phaseOfFirstInsulin: Double?,
+
 
     // ─────────────────────────────
     // Predictie feiten
@@ -63,7 +67,8 @@ class FCLvNextObsEpisodeSummarizer(
 
     fun summarize(
         episode: Episode,
-        predictedPeakAtStart: Double?
+        predictedPeakAtStart: Double?,
+        targetMmol: Double
     ): FCLvNextObsEpisodeSummary {
 
         requireNotNull(episode.endTime) {
@@ -94,6 +99,16 @@ class FCLvNextObsEpisodeSummarizer(
 
         val timeAbove10Min = computeTimeAbove(bg, 10.0)
 
+        val timeBelowTargetMin =
+            if (!episode.isNight)
+                computeTimeBelow(bg, targetMmol)
+            else
+                0
+
+        val timeBelowHypoMin =
+            computeTimeBelow(bg, 3.9)
+
+
         val postPeakDurationMin =
             peakTime?.let {
                 Minutes.minutesBetween(it, end).minutes
@@ -114,6 +129,15 @@ class FCLvNextObsEpisodeSummarizer(
             firstMeaningfulInsulinAt?.let {
                 Minutes.minutesBetween(start, it).minutes
             }
+
+        val phaseOfFirstInsulin =
+            if (minutesToFirstInsulin != null &&
+                timeToPeakMin != null &&
+                timeToPeakMin > 0
+            ) {
+                minutesToFirstInsulin.toDouble() / timeToPeakMin.toDouble()
+            } else null
+
 
         // ─────────────────────────────
         // Predictie analyse
@@ -140,6 +164,8 @@ class FCLvNextObsEpisodeSummarizer(
             nadirTime = nadir?.first,
 
             timeAbove10Min = timeAbove10Min,
+            timeBelowTargetMin = timeBelowTargetMin,
+            timeBelowHypoMin = timeBelowHypoMin,
 
             postPeakDurationMin = postPeakDurationMin,
             reboundDetected = reboundDetected,
@@ -147,6 +173,7 @@ class FCLvNextObsEpisodeSummarizer(
             totalInsulinU = totalInsulin,
             firstMeaningfulInsulinAt = firstMeaningfulInsulinAt,
             minutesToFirstInsulin = minutesToFirstInsulin,
+            phaseOfFirstInsulin = phaseOfFirstInsulin,
 
             predictedPeakAtStart = predictedPeakAtStart,
             peakPredictionError = peakPredictionError
@@ -177,6 +204,28 @@ class FCLvNextObsEpisodeSummarizer(
         }
         return minutes
     }
+
+    private fun computeTimeBelow(
+        bg: List<Pair<DateTime, Double>>,
+        threshold: Double
+    ): Int {
+        var minutes = 0
+
+        for (i in 0 until bg.size - 1) {
+            val a = bg[i]
+            val b = bg[i + 1]
+
+            val dt = Minutes.minutesBetween(a.first, b.first).minutes
+            if (dt <= 0) continue
+
+            val avg = (a.second + b.second) / 2.0
+            if (avg < threshold) {
+                minutes += dt
+            }
+        }
+        return minutes
+    }
+
 
     /**
      * Simpele rebound-detectie:
