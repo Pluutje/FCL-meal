@@ -15,6 +15,9 @@ import app.aaps.core.interfaces.meal.MealIntentType
 import app.aaps.plugins.aps.openAPSFCL.vnext.model.computeIobOvershootFactor
 import app.aaps.plugins.aps.openAPSFCL.vnext.model.clampDoseByIob
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.MealIntentOverlay
+import app.aaps.core.interfaces.iob.IobCobCalculator
+import app.aaps.core.interfaces.profile.ProfileFunction
+
 
 import kotlin.math.roundToInt
 
@@ -498,162 +501,10 @@ private fun decide(ctx: FCLvNextContext): DecisionResult {
     )
 }
 
-private fun updatePeakEstimate(
-    config: FCLvNextConfig,
-    ctx: FCLvNextContext,
-    mealSignal: MealSignal,
-    now: DateTime
-): PeakEstimate {
 
-    // ── episode start condities (flexibel, maar bewust niet te streng) ──
-    val episodeShouldBeActive =
-        mealSignal.state != MealState.NONE ||
-            ( ctx.consistency >= config.episodeMinConsistency &&
-                    ( ctx.deltaToTarget >= 0.6 ||
-                            (ctx.acceleration >= 0.12 && ctx.slope >= 0.15)
-                        )
-                )
 
-    // ── episode init/reset ──
-    if (!peakEstimator.active && episodeShouldBeActive) {
-        peakEstimator.active = true
-        peakEstimator.startedAt = now
-        peakEstimator.startBg = ctx.input.bgNow
-        peakEstimator.maxSlope = ctx.slope.coerceAtLeast(0.0)
-        peakEstimator.maxAccel = ctx.acceleration.coerceAtLeast(0.0)
-        peakEstimator.posSlopeArea = 0.0
-        peakEstimator.momentum = 0.0
-        peakEstimator.lastAt = now
-        peakEstimator.state = PeakPredictionState.IDLE
-        peakEstimator.confirmCounter = 0
-        // nieuw segment → nieuwe pre-peak impuls toegestaan
-        prePeakImpulseDone = false
-        lastSegmentAt = now
-        earlyDose = EarlyDoseContext()
-        earlyConfirmDone = false
-    }
 
-    // ── episode exit (niet te snel!) ──
-    if (peakEstimator.active && !episodeShouldBeActive) {
-        // exit pas als we echt “uit de meal dynamiek” zijn:
-        val fallingClearly = ctx.slope <= -0.6 && ctx.consistency >= config.episodeMinConsistency
-        val lowDelta = ctx.deltaToTarget < 0.2 && ctx.acceleration <= 0.0
-        if (fallingClearly || lowDelta) {
-            peakEstimator.active = false
-            peakEstimator.state = PeakPredictionState.IDLE
-            peakEstimator.confirmCounter = 0
-            earlyDose = EarlyDoseContext()
-            earlyConfirmDone = false
-        }
-    }
 
-    // ── update memory features ──
-    val last = peakEstimator.lastAt ?: now
-    val dtMin = org.joda.time.Minutes.minutesBetween(last, now).minutes.coerceAtLeast(0)
-    val dtH = (dtMin / 60.0).coerceAtMost(0.2) // cap dt om rare jumps te dempen
-
-    peakEstimator.lastAt = now
-
-    if (peakEstimator.active && dtH > 0.0) {
-        peakEstimator.maxSlope = maxOf(peakEstimator.maxSlope, ctx.slope.coerceAtLeast(0.0))
-        peakEstimator.maxAccel = maxOf(peakEstimator.maxAccel, ctx.acceleration.coerceAtLeast(0.0))
-
-        val pos = maxOf(0.0, ctx.slope) * dtH             // mmol/L
-        peakEstimator.posSlopeArea += pos
-
-        // momentum met half-life (zodat korte plateaus niet meteen alles resetten)
-        val halfLifeMin = config.peakMomentumHalfLifeMin
-        val decay = Math.pow(0.5, dtMin / halfLifeMin.coerceAtLeast(1.0))
-        peakEstimator.momentum = peakEstimator.momentum * decay + pos
-    }
-
-    val riseSinceStart =
-        if (peakEstimator.active) (ctx.input.bgNow - peakEstimator.startBg).coerceAtLeast(0.0) else 0.0
-
-    // ── peak voorspelling: neem max van meerdere “conservatief vroege” schatters ──
-    val h = config.peakPredictionHorizonH
-
-    // 1) lokaal (maar nooit dominant als slope even wegvalt)
-    val localV = maxOf(0.0, ctx.slope)
-    val localA = maxOf(0.0, ctx.acceleration)
-
-    val localBallistic =
-        ctx.input.bgNow + localV * h + 0.5 * localA * h * h
-
-    // 2) episode ballistic (houdt eerdere max-snelheid vast)
-    val memV = maxOf(localV, config.peakUseMaxSlopeFrac * peakEstimator.maxSlope)
-    val memA = maxOf(localA, config.peakUseMaxAccelFrac * peakEstimator.maxAccel)
-
-    val memoryBallistic =
-        ctx.input.bgNow + memV * h + 0.5 * memA * h * h
-
-    // 3) momentum-based carry (integraal van stijging → “er komt nog meer”)
-    val momentumCarry =
-        ctx.input.bgNow + config.peakMomentumGain * peakEstimator.momentum
-
-    // 4) rise-so-far scaling (als we al X mmol gestegen zijn, dan is “10” vaak te laag)
-    val riseCarry =
-        ctx.input.bgNow + config.peakRiseGain * riseSinceStart
-
-    var predictedPeak = maxOf(localBallistic, memoryBallistic, momentumCarry, riseCarry)
-
-    // nooit onder huidige BG
-    predictedPeak = predictedPeak.coerceAtLeast(ctx.input.bgNow)
-
-    // optionele bovengrens (veilig tegen explode door rare accel)
-    predictedPeak = predictedPeak.coerceIn(ctx.input.bgNow, config.peakPredictionMaxMmol)
-
-    // ── state machine (watch/confirm) op basis van predictedPeak + momentum ──
-    val threshold = config.peakPredictionThreshold
-    val enoughMomentum = peakEstimator.momentum >= config.peakMinMomentum
-    val enoughConsistency = ctx.consistency >= config.peakMinConsistency
-
-    when (peakEstimator.state) {
-        PeakPredictionState.IDLE -> {
-            if (predictedPeak >= threshold && enoughConsistency && (localV >= config.peakMinSlope || peakEstimator.maxSlope >= config.peakMinSlope) && enoughMomentum) {
-                peakEstimator.state = PeakPredictionState.WATCHING
-                peakEstimator.confirmCounter = 1
-            }
-        }
-
-        PeakPredictionState.WATCHING -> {
-            if (predictedPeak >= threshold && enoughConsistency && enoughMomentum) {
-                peakEstimator.confirmCounter++
-                if (peakEstimator.confirmCounter >= config.peakConfirmCycles) {
-                    peakEstimator.state = PeakPredictionState.CONFIRMED
-                }
-            } else {
-                peakEstimator.state = PeakPredictionState.IDLE
-                peakEstimator.confirmCounter = 0
-            }
-        }
-
-        PeakPredictionState.CONFIRMED -> {
-            // exit zodra we echt post-peak zijn (jouw config-waarden)
-            if (ctx.acceleration < config.peakExitAccel || ctx.slope < config.peakExitSlope) {
-                peakEstimator.state = PeakPredictionState.IDLE
-                peakEstimator.confirmCounter = 0
-            }
-        }
-    }
-
-    val band = when {
-        predictedPeak >= 20.0 -> 20
-        predictedPeak >= 15.0 -> 15
-        predictedPeak >= 12.0 -> 12
-        predictedPeak >= 10.0 -> 10
-        else -> 0
-    }
-
-    return PeakEstimate(
-        state = peakEstimator.state,
-        predictedPeak = predictedPeak,
-        peakBand = band,
-        maxSlope = peakEstimator.maxSlope,
-        momentum = peakEstimator.momentum,
-        riseSinceStart = riseSinceStart
-    )
-}
 
 
 
@@ -894,7 +745,7 @@ private fun computePreReserveSplit(
 
     // 🔹 Speciale versnelling voor echte maaltijdstijging in EXTREME
     val isAggressiveMealRise =
-            bgZone == BgZone.EXTREME &&
+        bgZone == BgZone.EXTREME &&
             ctx.slope >= 0.9 &&
             ctx.acceleration >= 0.30 &&
             ctx.consistency >= config.episodeMinConsistency &&
@@ -1049,20 +900,81 @@ private fun isInAbsorptionWindow(now: DateTime, config: FCLvNextConfig): Boolean
 
 
 
-private data class SafetyBlock(
+private data class HypoProtection(
     val active: Boolean,
+    val projectedMin: Double,
+    val projectedMinNoInsulin: Double,
+    val projectedMinWithPlannedInsulin: Double,
     val reason: String
 )
 
+private fun hypoProtection(
+    ctx: FCLvNextContext,
+    plannedDoseU: Double,
+    effectiveISF: Double
+): HypoProtection {
 
-
-private fun hypoGuardBlock(pred60: Double): SafetyBlock {
-    return if (pred60 <= 4.4) {
-        SafetyBlock(true, "HYPO GUARD (pred60=${"%.2f".format(pred60)})")
-    } else {
-        SafetyBlock(false, "")
+    // Projecteer BG met macro trend (mmol/L per uur) naar minuten.
+    // Let op: dit is een *safety* gate, dus conservatief.
+    fun trendBgAt(min: Int): Double {
+        val tHr = min / 60.0
+        return ctx.input.bgNow +
+            ctx.slope * tHr +
+            0.5 * ctx.acceleration * tHr * tHr
     }
+
+    // Conservatieve “worst-case” insulin impact fracties
+    // (veiligheids-gate: liever te streng dan te los).
+    fun insulinActionFrac(min: Int): Double = when {
+        min <= 30 -> 0.25
+        min <= 60 -> 0.55
+        else      -> 0.80   // 90m
+    }
+
+    val horizons = listOf(30, 60, 90)
+
+    var projectedMinNoInsulin = Double.POSITIVE_INFINITY
+    var projectedMinWithInsulin = Double.POSITIVE_INFINITY
+
+    for (m in horizons) {
+        val bgNoInsulin = trendBgAt(m)
+        projectedMinNoInsulin = minOf(projectedMinNoInsulin, bgNoInsulin)
+
+        val insulinImpact =
+            if (plannedDoseU > 0.0) plannedDoseU * effectiveISF * insulinActionFrac(m) else 0.0
+
+        val bgWithInsulin = bgNoInsulin - insulinImpact
+        projectedMinWithInsulin = minOf(projectedMinWithInsulin, bgWithInsulin)
+    }
+
+    val projectedMin = minOf(projectedMinNoInsulin, projectedMinWithInsulin)
+
+    // Safety threshold: iets hoger dan 4.4 om “net-niet” hypos te voorkomen.
+    val blockThreshold = 4.6
+
+    val (active, reason) = if (projectedMin < blockThreshold) {
+        val mode =
+            if (projectedMinWithInsulin < projectedMinNoInsulin && plannedDoseU > 0.0)
+                "WITH_PLANNED_INSULIN"
+            else
+                "TREND_ONLY"
+
+        true to
+            "HYPO PROTECT ($mode planned=${"%.2f".format(plannedDoseU)}U " +
+            "minProj=${"%.2f".format(projectedMin)})"
+    } else {
+        false to ""
+    }
+
+    return HypoProtection(
+        active = active,
+        projectedMin = projectedMin,
+        projectedMinNoInsulin = projectedMinNoInsulin,
+        projectedMinWithPlannedInsulin = projectedMinWithInsulin,
+        reason = reason
+    )
 }
+
 
 private data class RescueSignal(
     val state: RescueState,
@@ -1248,9 +1160,9 @@ private fun computeMicroRamp(ctx: FCLvNextContext, config: FCLvNextConfig, peak:
         ctx.deltaToTarget >= 0.8 * mul && (
             // eerder triggeren op fast-lane rise
             ctx.recentDelta5m >= 0.06 * mul ||
-            ctx.recentSlope >= 0.60 * mul ||
-            ( ctx.recentSlope >= MEAL_RISE_SLOPE_HR * mul &&  ctx.acceleration >= MEAL_RISE_ACCEL * mul  ) ||
-             ctx.recentDelta5m >= MEAL_RISE_DELTA5M * mul  )
+                ctx.recentSlope >= 0.60 * mul ||
+                ( ctx.recentSlope >= MEAL_RISE_SLOPE_HR * mul &&  ctx.acceleration >= MEAL_RISE_ACCEL * mul  ) ||
+                ctx.recentDelta5m >= MEAL_RISE_DELTA5M * mul  )
 
 
     if (!fast && !meal) {
@@ -1388,7 +1300,7 @@ private fun computeEarlyDoseDecision(
     bgZone : BgZone,
     now: DateTime,
     config: FCLvNextConfig
-    ): EarlyDoseDecision {
+): EarlyDoseDecision {
 
     if (ctx.consistency < config.episodeMinConsistency) {
         return EarlyDoseDecision(false, 0, 0.0, 0.0, "EARLY: low consistency")
@@ -2106,9 +2018,178 @@ private fun heightEscalationFactor(
 class FCLvNext(
     private val preferences: Preferences,
     private val preBolusController: PreBolusController,
-    private val mealIntentOverlay: MealIntentOverlay   // ✅ NEW
+    private val mealIntentOverlay: MealIntentOverlay,
+    private val iobCobCalculator: IobCobCalculator,      // ✅ NIEUW
+    private val profileFunction: ProfileFunction         // ✅ NIEUW
 ) {
 
+    private fun computeFutureInsulinDrop60m(
+        now: DateTime,
+        effectiveISF: Double
+    ): Double {
+
+        val profile = profileFunction.getProfile(now.millis) ?: return 0.0
+
+        val nowIob = iobCobCalculator
+            .calculateFromTreatmentsAndTemps(now.millis, profile)
+
+        val futureTime = now.plusMinutes(60)
+
+        val futureIob = iobCobCalculator
+            .calculateFromTreatmentsAndTemps(futureTime.millis, profile)
+
+        val deltaIob = (nowIob.iob - futureIob.iob).coerceAtLeast(0.0)
+
+        return deltaIob * effectiveISF
+    }
+
+    private fun updatePeakEstimate(
+        config: FCLvNextConfig,
+        ctx: FCLvNextContext,
+        mealSignal: MealSignal,
+        now: DateTime
+    ): PeakEstimate {
+
+        // ── episode start condities (flexibel, maar bewust niet te streng) ──
+        val episodeShouldBeActive =
+            mealSignal.state != MealState.NONE ||
+                ( ctx.consistency >= config.episodeMinConsistency &&
+                    ( ctx.deltaToTarget >= 0.6 ||
+                        (ctx.acceleration >= 0.12 && ctx.slope >= 0.15)
+                        )
+                    )
+
+        // ── episode init/reset ──
+        if (!peakEstimator.active && episodeShouldBeActive) {
+            peakEstimator.active = true
+            peakEstimator.startedAt = now
+            peakEstimator.startBg = ctx.input.bgNow
+            peakEstimator.maxSlope = ctx.slope.coerceAtLeast(0.0)
+            peakEstimator.maxAccel = ctx.acceleration.coerceAtLeast(0.0)
+            peakEstimator.posSlopeArea = 0.0
+            peakEstimator.momentum = 0.0
+            peakEstimator.lastAt = now
+            peakEstimator.state = PeakPredictionState.IDLE
+            peakEstimator.confirmCounter = 0
+            // nieuw segment → nieuwe pre-peak impuls toegestaan
+            prePeakImpulseDone = false
+            lastSegmentAt = now
+            earlyDose = EarlyDoseContext()
+            earlyConfirmDone = false
+        }
+
+        // ── episode exit (niet te snel!) ──
+        if (peakEstimator.active && !episodeShouldBeActive) {
+            // exit pas als we echt “uit de meal dynamiek” zijn:
+            val fallingClearly = ctx.slope <= -0.6 && ctx.consistency >= config.episodeMinConsistency
+            val lowDelta = ctx.deltaToTarget < 0.2 && ctx.acceleration <= 0.0
+            if (fallingClearly || lowDelta) {
+                peakEstimator.active = false
+                peakEstimator.state = PeakPredictionState.IDLE
+                peakEstimator.confirmCounter = 0
+                earlyDose = EarlyDoseContext()
+                earlyConfirmDone = false
+            }
+        }
+
+        // ── update memory features ──
+        val last = peakEstimator.lastAt ?: now
+        val dtMin = org.joda.time.Minutes.minutesBetween(last, now).minutes.coerceAtLeast(0)
+        val dtH = (dtMin / 60.0).coerceAtMost(0.2) // cap dt om rare jumps te dempen
+
+        peakEstimator.lastAt = now
+
+        if (peakEstimator.active && dtH > 0.0) {
+            peakEstimator.maxSlope = maxOf(peakEstimator.maxSlope, ctx.slope.coerceAtLeast(0.0))
+            peakEstimator.maxAccel = maxOf(peakEstimator.maxAccel, ctx.acceleration.coerceAtLeast(0.0))
+
+            val pos = maxOf(0.0, ctx.slope) * dtH             // mmol/L
+            peakEstimator.posSlopeArea += pos
+
+            // momentum met half-life (zodat korte plateaus niet meteen alles resetten)
+            val halfLifeMin = config.peakMomentumHalfLifeMin
+            val decay = Math.pow(0.5, dtMin / halfLifeMin.coerceAtLeast(1.0))
+            peakEstimator.momentum = peakEstimator.momentum * decay + pos
+        }
+
+        val riseSinceStart =
+            if (peakEstimator.active) (ctx.input.bgNow - peakEstimator.startBg).coerceAtLeast(0.0) else 0.0
+
+// ── peak voorspelling (v2): iob-aware ballistic met adaptive horizon ──
+
+// We gebruiken jouw bestaande riseSinceStart (die hierboven al is berekend)
+        val bgNow = ctx.input.bgNow
+
+// 0.35..1.0 op basis van hoe “ver” de episode al is (2.0 mmol stijging = volledig)
+        val riseFrac = (riseSinceStart / 2.0).coerceIn(0.35, 1.0)
+
+// iob hoog => kortere horizon (insuline gaat de stijging waarschijnlijk afremmen)
+        val iobScale = (1.0 - 0.6 * ctx.iobRatio).coerceIn(0.35, 1.0)
+
+// effectieve horizon (uren)
+        val hEff = config.peakPredictionHorizonH * riseFrac * iobScale
+
+// v5: korte-termijn snelheid uit delta5m (mmol/5m -> mmol/uur)
+        val v5Raw = ctx.recentDelta5m * 12.0
+
+// Conservatief: geen negatieve stijging gebruiken voor peak,
+// maar laat v5 ook niet compleet naar 0 klappen door mini-ruis
+        val v5 = v5Raw.coerceIn(0.0, 6.0)
+        val vMacro = ctx.slope.coerceIn(0.0, 6.0)
+
+// Veiligste snelheid blijft: kleinste van macro en short-term
+// (maar met een heel kleine vloer zodat predictedPeak niet "stuck" raakt)
+        val v = maxOf(0.10, minOf(vMacro, v5))
+
+// ✅ Conservatief verbeteren: negatieve accel deels meenemen.
+// Bij afremmen (accel < 0) mag predictedPeak sneller omlaag.
+// We nemen bijv. 50% van negatieve accel mee, maar clampen hard.
+        val aPos = ctx.acceleration.coerceAtLeast(0.0)
+        val aNeg = ctx.acceleration.coerceAtMost(0.0)
+        val a = (aPos + 0.50 * aNeg).coerceIn(-0.25, 0.60)
+
+// Ballistic projectie
+        var predictedPeakBallistic =
+            bgNow + v * hEff + 0.5 * a * hEff * hEff
+
+// ─────────────────────────────────────────────
+// 🧠 IOB-aware correctie (AAPS future projection)
+// ─────────────────────────────────────────────
+
+        val futureDrop60 =
+            computeFutureInsulinDrop60m(
+                now = now,
+                effectiveISF = ctx.input.effectiveISF
+            )
+
+// Trek toekomstige insuline-impact af
+        var predictedPeak =
+            predictedPeakBallistic - futureDrop60
+
+// Safety rails
+        predictedPeak = predictedPeak.coerceAtLeast(bgNow)
+        predictedPeak = predictedPeak.coerceIn(bgNow, config.peakPredictionMaxMmol)
+
+
+
+
+        val band = when {
+            predictedPeak >= 20.0 -> 20
+            predictedPeak >= 15.0 -> 15
+            predictedPeak >= 12.0 -> 12
+            predictedPeak >= 10.0 -> 10
+            else -> 0
+        }
+
+        return PeakEstimate(
+            state = peakEstimator.state,
+            predictedPeak = predictedPeak,
+            peakBand = band,
+            maxSlope = peakEstimator.maxSlope,
+            momentum = peakEstimator.momentum,
+            riseSinceStart = riseSinceStart
+        )
+    }
 
     private val profileParamLogger =
         FCLvNextParameterLogger(
@@ -2116,8 +2197,6 @@ class FCLvNext(
         ) {
             FCLvNextProfileParameterSnapshot.collect(preferences)
         }
-
-
 
 
     private fun buildContext(input: FCLvNextInput, config: FCLvNextConfig): FCLvNextContext {
@@ -2186,7 +2265,7 @@ class FCLvNext(
 
     // ================================================    Get Advice ++++++++++++++++++++++++++++++++++++++
     @SuppressLint("SuspiciousIndentation") fun getAdvice(input: FCLvNextInput): FCLvNextAdvice {
-         // reset reserve logging per cycle
+        // reset reserve logging per cycle
         reserveActionThisCycle = "NONE"
         reserveDeltaThisCycle = 0.0
 
@@ -2198,7 +2277,7 @@ class FCLvNext(
             target = input.targetBG
         )
         val status = StringBuilder()
-        
+
 
         // ─────────────────────────────────────────────
         // 1️⃣ Config & context (trends, IOB, delta)
@@ -2328,8 +2407,8 @@ class FCLvNext(
         )
 
         // ─────────────────────────────────────────────
-       // 🔒 ENERGY EXHAUSTION GATE (post-rise hard stop)
-       // ─────────────────────────────────────────────
+        // 🔒 ENERGY EXHAUSTION GATE (post-rise hard stop)
+        // ─────────────────────────────────────────────
         val energyExhausted =
             ctx.deltaToTarget >= 4.5 &&            // duidelijk boven target
                 ctx.acceleration in -0.05..0.05 &&             // versnelling vrijwel weg
@@ -2399,8 +2478,8 @@ class FCLvNext(
         val peakCategory = classifyPeak(predictedPeak)
 
         // ─────────────────────────────────────────────
-       // 🧯 DOWN-TREND GATE (short-term trend lockout)
-       // ─────────────────────────────────────────────
+        // 🧯 DOWN-TREND GATE (short-term trend lockout)
+        // ─────────────────────────────────────────────
         val downGate = updateDowntrendGate(ctx, mealSignal, peak, config)
         status.append(downGate.reason + "\n")
 
@@ -2470,7 +2549,7 @@ class FCLvNext(
 
 // downGate.locked: NIET returnen, maar later dose=0 afdwingen (zie last line)
 
-    val trendConfirmed = (trend.state == TrendState.RISING_CONFIRMED)
+        val trendConfirmed = (trend.state == TrendState.RISING_CONFIRMED)
 
         status.append(
             "PeakEstimate=${peak.state} " +
@@ -2517,8 +2596,8 @@ class FCLvNext(
 
 
         var finalDose =
-                 (decidedDose * iobFactor * config.doseStrengthMul)
-                 .coerceAtLeast(0.0)
+            (decidedDose * iobFactor * config.doseStrengthMul)
+                .coerceAtLeast(0.0)
 
         if (mealSignal.state == MealState.NONE && ctx.acceleration > 0.2 && ctx.iobRatio >= 0.75) {
             status.append("RISING IOB CAP → finalDose limited\n")
@@ -2691,7 +2770,7 @@ class FCLvNext(
             status.append("Trajectory HARD BLOCK → finalDose=0\n")
             finalDose = 0.0
         } else {
-         //   val zoneEnum = computeBgZone(ctx)
+            //   val zoneEnum = computeBgZone(ctx)
             val fastLaneDip = (ctx.recentDelta5m <= -0.06 || ctx.recentSlope <= -0.20)
             val trajFactor =
                 if (earlyStageCandidate > 0 && !fastLaneDip && !suppressForPeak && !postPeak.sensorBlip) {
@@ -2714,7 +2793,7 @@ class FCLvNext(
         if (early.active && early.targetU > accessCap) {
             status.append("EARLY capped by ACCESS (${accessLevel})\n")
         }
- // ===============================================================================
+        // ===============================================================================
 
 // Apply early floor AFTER dampers (maar vóór cap/commit)
 // ✅ NIET toepassen als we al aan het afremmen zijn (accel < 0)
@@ -2770,8 +2849,8 @@ class FCLvNext(
 
 
         // ─────────────────────────────────────────────
-       // 🟦 PERSISTENT CORRECTION LOOP (dag + nacht)
-       // ─────────────────────────────────────────────
+        // 🟦 PERSISTENT CORRECTION LOOP (dag + nacht)
+        // ─────────────────────────────────────────────
         val baseMinDelta =
             if (ctx.input.isNight) 1.5 else 1.7
 
@@ -2837,8 +2916,8 @@ class FCLvNext(
 
 
         // ─────────────────────────────────────────────
-       // ⚡ EARLY CONFIRM IMPULSE (bridges early → commit)
-      // ─────────────────────────────────────────────
+        // ⚡ EARLY CONFIRM IMPULSE (bridges early → commit)
+        // ─────────────────────────────────────────────
         val earlyConfirm =
             !earlyConfirmDone &&
                 earlyDose.stage >= 2 &&                 // we hadden al een early boost
@@ -2885,7 +2964,7 @@ class FCLvNext(
 // 9️⃣ Meal detectie & commit/observe + peak suppression + re-entry
 // ─────────────────────────────────────────────
 
-     //   val commitAllowed = canCommitNow(now, config)
+        //   val commitAllowed = canCommitNow(now, config)
         val commitAllowed = canCommitNow(now, ctx, config)
 
 // ─────────────────────────────────────────────
@@ -2958,7 +3037,7 @@ class FCLvNext(
 
         val fastCarbOverride =
             config.enableFastCarbOverride &&
-            peak.predictedPeak >= 12.0 &&
+                peak.predictedPeak >= 12.0 &&
                 ctx.slope >= 1.5 &&
                 ctx.acceleration >= 0.25 &&
                 ctx.consistency >= config.minConsistency
@@ -3061,7 +3140,7 @@ class FCLvNext(
 
                 if (committedDose >= effectiveMinCommitDose) {
 
-             //   if (committedDose >= config.minCommitDose) {
+                    //   if (committedDose >= config.minCommitDose) {
 
                     commandedDose = committedDose
 
@@ -3103,6 +3182,18 @@ class FCLvNext(
             status = status
         )
 
+        val hypoProj = hypoProtection(
+            ctx = ctx,
+            plannedDoseU = commandedDose,
+            effectiveISF = input.effectiveISF
+        )
+
+        val reserveReleaseBlocked = hypoProj.active
+
+        if (hypoProj.active) {
+            status.append("${hypoProj.reason} → commandedDose=0\n")
+            commandedDose = 0.0
+        }
 
 
 // 1) Release rule: als reserve bestaat en trend draait weer omhoog → geef gecontroleerd vrij
@@ -3112,9 +3203,11 @@ class FCLvNext(
                 ctx.recentDelta5m >= 0.06 || ctx.recentSlope >= 0.20
 
             val safeToRelease =
-                ctx.acceleration >= 0.0 &&                 // niet vrijgeven tijdens afremmen
-                    ctx.input.bgNow >= 4.8 &&              // simpele hypo-veiligheidsgrens
+                !reserveReleaseBlocked &&
+                    ctx.acceleration >= 0.0 &&
+                    ctx.input.bgNow >= 4.8 &&
                     ctx.consistency >= config.minConsistency
+
 
             if (risingAgain && safeToRelease) {
 
@@ -3299,9 +3392,13 @@ class FCLvNext(
 // ─────────────────────────────────────────────
 // HARD SAFETY BLOCKS (final gate before delivery)
 // ─────────────────────────────────────────────
-        val hypoBlock = hypoGuardBlock(pred60)
-        if (hypoBlock.active) {
-            status.append(hypoBlock.reason + " → commandedDose=0\n")
+        val hypoFinal = hypoProtection(
+            ctx = ctx,
+            plannedDoseU = commandedDose,
+            effectiveISF = input.effectiveISF
+        )
+        if (hypoFinal.active) {
+            status.append(hypoFinal.reason + " → commandedDose=0\n")
             commandedDose = 0.0
         }
 
@@ -3545,7 +3642,7 @@ class FCLvNext(
         val effectiveBasalRate =
             if (deliveredNow >= minDeliveryU) execution.basalRate else 0.0
 
-       // ✅ Alleen echte, zichtbare afleveringen loggen
+        // ✅ Alleen echte, zichtbare afleveringen loggen
         if (effectiveDeliveredNow >= minDeliveryU) {
             deliveryHistory.addFirst(now to effectiveDeliveredNow)
             while (deliveryHistory.size > MAX_DELIVERY_HISTORY) {
@@ -3564,7 +3661,7 @@ class FCLvNext(
         )
 
         // minimaal 0.08U per cycle voordat we "deliver" zeggen
-    //    val minDeliveryU = config.minDeliverDose
+        //    val minDeliveryU = config.minDeliverDose
 
         val shouldDeliver =
             if (persistentOverrideActive) {
@@ -3597,8 +3694,8 @@ class FCLvNext(
 
 
         // ─────────────────────────────────────────────
-       // Parameter snapshot logging (laagfrequent)
-       // ─────────────────────────────────────────────
+        // Parameter snapshot logging (laagfrequent)
+        // ─────────────────────────────────────────────
 
         profileParamLogger.maybeLog()
 

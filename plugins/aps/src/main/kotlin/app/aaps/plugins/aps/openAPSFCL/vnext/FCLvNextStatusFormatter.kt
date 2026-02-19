@@ -10,6 +10,16 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
 
 private const val UI_EPISODES_TO_SHOW = 5
 
+data class FclUiSnapshot(
+    val bgNow: Double,
+    val iob: Double,
+    val delta5m: Double?,
+    val slopeHr: Double?,
+    val predictedPeak: Double?,
+    val peakBand: Int?
+)
+
+
 class FCLvNextStatusFormatter(
     private val prefs: Preferences,
     private val mealIntentRepository: MealIntentRepository,
@@ -143,97 +153,99 @@ class FCLvNextStatusFormatter(
      * - toont eerst profiel + learning advice (als aanwezig)
      * - daarna eventueel de rest van statusText (optioneel, compact)
      */
-    private fun buildFclBlock(advice: FCLvNextAdvice?): String {
+    private fun buildFclBlock(
+        advice: FCLvNextAdvice?,
+        ui: FclUiSnapshot,
+        bolusAmount: Double,
+        basalRate: Double,
+        shouldDeliver: Boolean
+    ): String {
+
         if (advice == null) return "Geen FCL advies"
-
-        val statusText = advice.statusText ?: ""
-        val profileAdviceLine = extractProfileAdviceLine(statusText)
-        val profileReasonLine = extractProfileReasonLine(statusText)
-
-
-        val persistLines = extractPersistLines(statusText)
 
         val sb = StringBuilder()
 
         sb.append("🧠 FCL vNext\n")
         sb.append("─────────────────────\n")
 
+        // 📈 Situatie
+        sb.append("📈 Situatie\n")
+        sb.append("─────────────────────\n")
+        sb.append("• Glucose: ${"%.1f".format(ui.bgNow)} mmol/L\n")
+        sb.append("• IOB: ${"%.2f".format(ui.iob)} U\n")
 
-        if (profileAdviceLine != null) {
-            sb.append("• ").append(profileAdviceLine).append("\n")
-            if (profileReasonLine != null) {
-                sb.append("• ").append(profileReasonLine).append("\n")
-            }
+        ui.delta5m?.let {
+            sb.append("• Verandering (5m): ${"%.2f".format(it)} mmol/L\n")
         }
 
+        val (parsedPeak, parsedBand) = parsePeakFromStatus(advice.statusText)
 
+        val peakToShow = ui.predictedPeak ?: parsedPeak
+        val bandToShow = ui.peakBand ?: parsedBand
 
-
-        if (persistLines.isNotEmpty()) {
-            sb.append("\n")
-            sb.append("🔁 Persistente correctie\n")
-            sb.append("─────────────────────\n")
-            persistLines.forEach { line ->
-                val human = when {
-                    line.contains("building") ->
-                        "Opbouw: glucose blijft gedurende meerdere metingen verhoogd"
-
-                    line.contains("fire") ->
-                        "Correctie gegeven wegens aanhoudend hoge glucose"
-
-                    line.contains("cooldown") ->
-                        "Wachttijd actief na correctie (veiligheidsinterval)"
-
-                    line.contains("HOLD") ->
-                        "Correctie bewust uitgesteld (stabiliteitsfase)"
-
-                    else ->
-                        line   // fallback: toon originele tekst
-                }
-
-                sb.append("• ").append(human).append("\n")
-            }
-
+        peakToShow?.let {
+            val bandTxt = bandToShow?.let { b -> " (band ≥$b)" } ?: ""
+            sb.append("• Verwachte piek: ${"%.1f".format(it)} mmol/L$bandTxt\n")
         }
 
-        // Optioneel: als je tóch nog debug wil zien, laat hier een compacte excerpt zien.
-        // Nu: alleen de eerste ~25 regels om UI netjes te houden.
-        val lines = statusText.split("\n").map { it.trim() }
-
-        fun section(title: String, filter: (String) -> Boolean) {
-            val block = lines.filter(filter)
-            if (block.isNotEmpty()) {
-                sb.append("\n")
-                sb.append(title).append("\n")
-                sb.append("─────────────────────\n")
-                block.forEach { sb.append(it).append("\n") }
-            }
+        ui.slopeHr?.let {
+            sb.append("• Trend: ${humanTrend(it)}\n")
         }
 
-// 📈 Trends & dynamiek
-        section("📈 Trend & dynamiek") {
-            it.startsWith("TREND") ||
-                it.startsWith("TrendPersistence") ||
-                it.startsWith("PeakEstimate")
+        sb.append("\n")
+
+        // 💉 Advies
+        sb.append("💉 Advies\n")
+        sb.append("─────────────────────\n")
+
+        if (!shouldDeliver || (bolusAmount == 0.0 && basalRate == 0.0)) {
+            sb.append("• Geen extra insuline nodig\n")
+        } else {
+            val total = bolusAmount + (basalRate * (5.0 / 60.0))
+            sb.append("• Extra insuline nu: ${"%.2f".format(total)} U\n")
         }
 
-// 💉 Dosering
-        section("💉 Dosering & beslissingen") {
-            it.startsWith("RawDose") ||
-                it.startsWith("Decision=") ||
-                it.startsWith("Trajectory") ||
-                it.startsWith("ACCESS")
-        }
+        sb.append("\n")
 
-// ⏳ Timing / commits
-        section("⏳ Timing & commits") {
-            it.startsWith("Commit") ||
-                it.startsWith("OBSERVE") ||
-                it.startsWith("DELIVERY")
-        }
-
+        // ⏳ Timing
+        sb.append("⏳ Timing\n")
+        sb.append("─────────────────────\n")
+        sb.append(if (shouldDeliver) "• Toediening nu\n" else "• Geen toediening\n")
 
         return sb.toString().trimEnd()
+    }
+
+    private fun humanTrend(slope: Double): String =
+        when {
+            slope < -0.5 -> "Dalend"
+            slope < 0.5  -> "Stabiel"
+            slope < 1.5  -> "Licht stijgend"
+            else         -> "Snel stijgend"
+        }
+
+    private fun parsePeakFromStatus(statusText: String?): Pair<Double?, Int?> {
+        if (statusText.isNullOrBlank()) return null to null
+
+        val line = statusText.lineSequence()
+            .firstOrNull { it.startsWith("PeakEstimate=") }
+            ?: return null to null
+
+        fun findDouble(key: String): Double? {
+            val m = Regex("""\b${Regex.escape(key)}=([0-9]+(?:\.[0-9]+)?)""")
+                .find(line) ?: return null
+            return m.groupValues[1].toDoubleOrNull()
+        }
+
+        fun findInt(key: String): Int? {
+            val m = Regex("""\b${Regex.escape(key)}=([0-9]+)""")
+                .find(line) ?: return null
+            return m.groupValues[1].toIntOrNull()
+        }
+
+        val peak = findDouble("pred")
+        val band = findInt("band")
+
+        return peak to band
     }
 
     private fun humanLearningStatus(status: SnapshotStatus): String =
@@ -523,11 +535,11 @@ Nog geen observaties beschikbaar
         bolusAmount: Double,
         basalRate: Double,
         shouldDeliver: Boolean,
+        ui: FclUiSnapshot,
         activityLog: String?,
         resistanceLog: String?,
         metricsText: String?,
         learningSnapshot: FCLvNextObsSnapshot?
-
     ): String {
 
         val coreStatus = """
@@ -543,7 +555,13 @@ STATUS: (${if (isNight) "'S NACHTS" else "OVERDAG"})
 ${formatDeliveryHistory(advice?.let { deliveryHistory.toList() })}
 """.trimIndent()
 
-        val fclCore = buildFclBlock(advice)
+        val fclCore = buildFclBlock(
+            advice = advice,
+            ui = ui,
+            bolusAmount = bolusAmount,
+            basalRate = basalRate,
+            shouldDeliver = shouldDeliver
+        )
 
 
         val mealIntentBlock = buildMealIntentBlock()
@@ -572,7 +590,7 @@ ${metricsText ?: "Nog geen data"}
 
         return """
 ════════════════════════
- 🧠 FCL meal V4 v1.3.0
+ 🧠 FCL meal V4 v1.3.3
  
 ════════════════════════
 • Height (sterkte)     : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}

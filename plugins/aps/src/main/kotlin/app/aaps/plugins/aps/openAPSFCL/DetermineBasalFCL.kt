@@ -44,7 +44,9 @@ import android.content.Context
 
 import org.joda.time.Hours
 import app.aaps.core.data.model.SC
+import app.aaps.core.interfaces.iob.IobCobCalculator
 import app.aaps.core.interfaces.meal.MealIntentRepository
+import app.aaps.core.interfaces.profile.ProfileFunction
 import app.aaps.plugins.aps.openAPSFCL.vnext.model.BGDataPoint
 import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextStatusFormatter
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsOrchestrator
@@ -66,6 +68,7 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.learning.StoredLearningState
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.MealIntentOverlay
 import com.google.gson.Gson
+import app.aaps.plugins.aps.openAPSFCL.vnext.FclUiSnapshot
 
 @Singleton
 
@@ -76,7 +79,9 @@ class DetermineBasalFCL @Inject constructor(
     private val dateUtil: DateUtil,
     private val persistenceLayer: PersistenceLayer,
     private val context: Context,
-    private val mealIntentOverlay: MealIntentOverlay
+    private val mealIntentOverlay: MealIntentOverlay,
+    private val iobCobCalculator: IobCobCalculator,   // ✅ toevoegen
+    private val profileFunction: ProfileFunction      // ✅ toevoegen
 ) {
 
     private val fclMetrics = FCLMetrics(context = context,preferences = preferences,persistenceLayer = persistenceLayer)
@@ -90,7 +95,9 @@ class DetermineBasalFCL @Inject constructor(
         FCLvNext(
             preferences = preferences,
             preBolusController = preBolusController,
-            mealIntentOverlay = mealIntentOverlay   // ✅ doorgeven
+            mealIntentOverlay = mealIntentOverlay,
+            iobCobCalculator = iobCobCalculator,     // ✅ toevoegen
+            profileFunction = profileFunction        // ✅ toevoegen
         )
 
     private val obsInsulinProvider =
@@ -508,17 +515,25 @@ class DetermineBasalFCL @Inject constructor(
                 )
 
 
+            val uiSnapshot = FclUiSnapshot(
+                bgNow = bgNowMmol,
+                iob = currentIOB,
+                delta5m = trendAnalysis?.recentDelta5m,
+                slopeHr = trendAnalysis?.firstDerivative,
+                predictedPeak = null,   // later uitbreidbaar
+                peakBand = null
+            )
             val uiText = statusFormatter.buildStatus(
                 isNight = isNight,
                 advice = advice,
                 bolusAmount = bolusAmount,
                 basalRate = basalRate,
                 shouldDeliver = shouldDeliver,
+                ui = uiSnapshot,   // <-- TOEVOEGEN
                 activityLog = activity.log,
                 resistanceLog = resistanceLog,
                 metricsText = fclMetrics.getUserStatsString(isNight),
                 learningSnapshot = snapshot
-
             )
 
             // naar console / UI
