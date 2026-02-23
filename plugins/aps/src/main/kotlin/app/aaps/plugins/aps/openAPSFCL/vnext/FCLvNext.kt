@@ -59,6 +59,12 @@ data class FCLvNextAdvice(
     val effectiveISF: Double,
     val targetAdjustment: Double,
 
+    // ✅ peak output (single source of truth for UI + logging)
+    val predictedPeak: Double?,
+    val peakBand: Int?,
+    val peakState: String?,
+    val secondDerivative: Double,
+
     // debug / UI
     val statusText: String
 )
@@ -141,46 +147,54 @@ private fun classifyTrendState(ctx: FCLvNextContext, config: FCLvNextConfig): Tr
     val confAccelMin = 0.18
 
 
-    val slope = ctx.slope
-    val accel = ctx.acceleration
+    val slopeEff = maxOf(ctx.slope, ctx.recentSlope * 0.6)
+    val accelEff = ctx.acceleration
     val delta = ctx.deltaToTarget
 
     // dalend/flat -> NONE
-    if (slope <= 0.15 && accel <= 0.05) {
+    if (slopeEff <= 0.15 && accelEff <= 0.05) {
         return TrendDecision(
             TrendState.NONE,
-            "TREND none: slope=${"%.2f".format(slope)} accel=${"%.2f".format(accel)}"
+            "TREND none: slope=${"%.2f".format(slopeEff)} accel=${"%.2f".format(accelEff)}"
         )
     }
 
     // CONFIRMED (alleen als ook delta echt boven target is)
+    val strongAcceleration =
+        accelEff >= (confAccelMin * 1.2) &&
+            delta >= (confDeltaMin * 0.8)
+
     val confirmed =
-        slope >= confSlopeMin &&
-            accel >= confAccelMin &&
-            delta >= confDeltaMin
+        (
+            slopeEff >= confSlopeMin &&
+                accelEff >= confAccelMin &&
+                delta >= confDeltaMin
+            )
+            ||
+            strongAcceleration
 
     if (confirmed) {
         return TrendDecision(
             TrendState.RISING_CONFIRMED,
-            "TREND confirmed: slope=${"%.2f".format(slope)} accel=${"%.2f".format(accel)} delta=${"%.2f".format(delta)}"
+            "TREND confirmed: slope=${"%.2f".format(slopeEff)} accel=${"%.2f".format(accelEff)} delta=${"%.2f".format(delta)}"
         )
     }
 
     // WEAK (voorzichtig)
     val weak =
-        slope >= weakSlopeMin &&
-            accel >= weakAccelMin
+        slopeEff >= weakSlopeMin &&
+            accelEff >= weakAccelMin
 
     if (weak) {
         return TrendDecision(
             TrendState.RISING_WEAK,
-            "TREND weak: slope=${"%.2f".format(slope)} accel=${"%.2f".format(accel)} delta=${"%.2f".format(delta)}"
+            "TREND weak: slope=${"%.2f".format(slopeEff)} accel=${"%.2f".format(accelEff)} delta=${"%.2f".format(delta)}"
         )
     }
 
     return TrendDecision(
         TrendState.NONE,
-        "TREND none: slope=${"%.2f".format(slope)} accel=${"%.2f".format(accel)} delta=${"%.2f".format(delta)}"
+        "TREND none: slope=${"%.2f".format(slopeEff)} accel=${"%.2f".format(accelEff)} delta=${"%.2f".format(delta)}"
     )
 }
 
@@ -320,8 +334,8 @@ private const val MEAL_ABORT_DELTA5M = -0.04
 private const val MEAL_ABORT_SLOPE_HR = -0.15
 private const val MEAL_ABORT_ACCEL = -0.06
 
-private const val MEAL_MICRO_MIN_U = 0.05
-private const val MEAL_MICRO_MAX_U = 0.12
+private const val MEAL_MICRO_MIN_U = 0.08
+private const val MEAL_MICRO_MAX_U = 0.14
 
 // ─────────────────────────────────────────────
 // ⚡ FAST micro ramp (snelle carbs → iets hoger, maar strakker abort)
@@ -501,13 +515,6 @@ private fun decide(ctx: FCLvNextContext): DecisionResult {
     )
 }
 
-
-
-
-
-
-
-
 private fun executeDelivery(
     dose: Double,
     hybridPercentage: Int,
@@ -516,7 +523,7 @@ private fun executeDelivery(
     bolusStep: Double = 0.05,        // SMB stap
     basalRateStep: Double = 0.05,    // rate stap in U/h
     minSmb: Double = 0.05,
-    smallDoseThreshold: Double = 0.4
+    smallDoseThreshold: Double = 0.3
 ): ExecutionResult {
 
     val cycleH = (cycleMinutes / 60.0).coerceAtLeast(1.0 / 60.0) // nooit 0
@@ -651,7 +658,8 @@ private fun detectMealSignal(ctx: FCLvNextContext, config: FCLvNextConfig): Meal
 
 
     // confidence: combineer factoren (simpel, maar werkt)
-    val rising = ctx.slope > slopeMin
+    val slopeEff = maxOf(ctx.slope, ctx.recentSlope * 0.6)
+    val rising = slopeEff > slopeMin
     val accelerating = ctx.acceleration > accelMin
     val aboveTarget = ctx.deltaToTarget > deltaMin
 
@@ -696,6 +704,53 @@ private fun canCommitNow(now: DateTime, ctx: FCLvNextContext, config: FCLvNextCo
     }
 
     return minutes >= effectiveCooldown
+}
+
+private data class CommitTrigger(
+    val ok: Boolean,
+    val reason: String
+)
+
+private fun accelFirstCommitTrigger(
+    ctx: FCLvNextContext,
+    peak: PeakEstimate,
+    mealSignal: MealSignal,
+    config: FCLvNextConfig,
+    prePeakCommitWindow: Boolean,
+    trend: TrendDecision
+): CommitTrigger {
+
+    // Basiseisen: data ok + boven target
+    if (ctx.consistency < config.minConsistency) {
+        return CommitTrigger(false, "COMMIT accel-first: low consistency")
+    }
+    if (ctx.deltaToTarget < 0.8) {
+        return CommitTrigger(false, "COMMIT accel-first: delta too low")
+    }
+
+    // Fast-lane rise (must)
+    val fastLane =
+        (ctx.recentDelta5m >= 0.08) ||   // ~0.96 mmol/h equivalent
+            (ctx.recentSlope >= 0.60)
+
+    // Accel must be meaningful
+    val accelOk =
+        (ctx.acceleration >= 0.14) ||
+            (ctx.acceleration >= 0.10 && ctx.recentDelta5m >= 0.12)
+
+    // Meal “context” (any of these makes it more legit)
+    val mealContext =
+        mealSignal.state != MealState.NONE ||
+            prePeakCommitWindow ||
+            trend.state == TrendState.RISING_CONFIRMED ||
+            peak.state == PeakPredictionState.WATCHING
+
+    val ok = mealContext && fastLane && accelOk
+
+    return CommitTrigger(
+        ok = ok,
+        reason = "COMMIT accel-first: mealCtx=$mealContext fast=$fastLane accelOk=$accelOk"
+    )
 }
 
 private fun commitFractionZoneFactor(bgZone: BgZone): Double {
@@ -1109,8 +1164,23 @@ private fun updateRescueDetection(
 
 private fun predictBg60(ctx: FCLvNextContext): Double {
     val h = 1.0
-    return ctx.input.bgNow + ctx.slope * h + 0.5 * ctx.acceleration * h * h
+
+    // Gebruik short-term info om “achterlopende” macro-slope te corrigeren.
+    // recentDelta5m (mmol/5m) -> mmol/h:
+    val vFast = (ctx.recentDelta5m * 12.0).coerceIn(-6.0, 12.0)
+    val vMacro = ctx.slope.coerceIn(-6.0, 12.0)
+
+    // Neem de “meest stijgende” indicatie (maar niet te extreem)
+    val vEff = maxOf(vMacro, vFast * 0.8)
+
+    val a = ctx.acceleration.coerceIn(-1.0, 1.5)
+
+    val pred = ctx.input.bgNow + vEff * h + 0.5 * a * h * h
+
+    // Als fast-lane stijgt, laat pred60 niet onder bgNow zakken
+    return if (ctx.recentDelta5m > 0.02 || ctx.recentSlope > 0.2) maxOf(pred, ctx.input.bgNow) else pred
 }
+
 
 private data class MicroRampResult(
     val active: Boolean,
@@ -1283,6 +1353,59 @@ private fun invSmooth01(x: Double): Double = 1.0 - smooth01(x)
 
 private fun lerp(a: Double, b: Double, t: Double): Double =
     a + (b - a) * t.coerceIn(0.0, 1.0)
+
+private data class MealAggression(
+    val a: Double,          // 0..1
+    val reason: String
+)
+
+private fun computeMealAggression(
+    ctx: FCLvNextContext,
+    peak: PeakEstimate,
+    mealSignal: MealSignal,
+    config: FCLvNextConfig
+): MealAggression {
+
+    // Fast-lane (dominant voor timing)
+    val d5 = ctx.recentDelta5m
+    val v5 = (d5 * 12.0)                      // mmol/L/h equivalent
+    val vFastScore = smooth01((v5 - 0.8) / (4.0 - 0.8))           // 0..1
+
+    // Accel (dominant voor “meal momentum”)
+    val accelScore = smooth01((ctx.acceleration - 0.06) / (0.30 - 0.06))
+
+    // Delta boven target (druk)
+    val deltaScore = smooth01((ctx.deltaToTarget - 0.6) / (3.5 - 0.6))
+
+    // Betrouwbaarheid
+    val consScore = smooth01((ctx.consistency - config.minConsistency) / (0.85 - config.minConsistency))
+
+    // MealSignal geeft extra vertrouwen
+    val mealBonus = when (mealSignal.state) {
+        MealState.CONFIRMED -> 0.18
+        MealState.UNCERTAIN -> 0.10
+        MealState.NONE -> 0.0
+    }
+
+    // Peak pressure (optioneel, mild)
+    val peakPressure = smooth01((peak.predictedPeak - 11.0) / (17.0 - 11.0)) * 0.10
+
+    var a =
+        0.30 * vFastScore +
+            0.32 * accelScore +
+            0.22 * deltaScore +
+            0.16 * consScore +
+            mealBonus +
+            peakPressure
+
+    // Hard clamps
+    a = a.coerceIn(0.0, 1.0)
+
+    return MealAggression(
+        a = a,
+        reason = "AGGR a=${"%.2f".format(a)} (v5=${"%.2f".format(v5)} accel=${"%.2f".format(ctx.acceleration)} delta=${"%.2f".format(ctx.deltaToTarget)} cons=${"%.2f".format(ctx.consistency)})"
+    )
+}
 
 private data class EarlyDoseDecision(
     val active: Boolean,
@@ -1475,7 +1598,8 @@ private fun evaluatePostPeak(
     mealSignal: MealSignal,
     peak: PeakEstimate,
     now: DateTime,
-    config: FCLvNextConfig
+    config: FCLvNextConfig,
+    mealIntentOrPrebolusActive: Boolean   // ✅ NEW
 ): PostPeakSummary {
 
     val inAbsorption = isInAbsorptionWindow(now, config)
@@ -1505,19 +1629,29 @@ private fun evaluatePostPeak(
     val fastRising = (ctx.recentSlope >= 1.50) || (ctx.recentDelta5m >= 0.20)
 
     val sensorBlip =
-        episodeLike && reliable &&
+        !mealIntentOrPrebolusActive &&      // ✅ CRUCIAAL: niet blokkeren als user “meal context” gaf
+            episodeLike && reliable &&
             ctx.deltaToTarget >= 1.0 &&
             ctx.iobRatio >= 0.25 &&
             slowFalling && fastRising
 
-// ✅ NIEUW: tail-suppress (post-peak) ook BUITEN absorptionWindow
-// Als we episode-like zijn en macro niet stijgt (omkeer/afremmen), dan suppress.
+// ✅ FIX: tailSuppress alleen als de FAST-LANE echt afvlakt (plateau/top),
+// niet puur omdat macro slope nog negatief is door historie.
+    val fastPlateauTail =
+        ctx.recentSlope <= 0.20 &&
+            kotlin.math.abs(ctx.recentDelta5m) <= 0.03
+
+    val risingAgainTail =
+        ctx.recentSlope >= 0.35 ||
+            ctx.recentDelta5m >= 0.08
+
     val tailSuppress =
         episodeLike && reliable &&
-            !isMacroRising(ctx, peak, config) &&
+            peak.riseSinceStart >= 1.0 &&
             ctx.deltaToTarget >= 1.0 &&
             ctx.iobRatio >= 0.30 &&
-            ctx.slope <= 0.0
+            fastPlateauTail &&
+            !risingAgainTail
 
 
 
@@ -2135,11 +2269,20 @@ class FCLvNext(
 // Conservatief: geen negatieve stijging gebruiken voor peak,
 // maar laat v5 ook niet compleet naar 0 klappen door mini-ruis
         val v5 = v5Raw.coerceIn(0.0, 6.0)
-        val vMacro = ctx.slope.coerceIn(0.0, 6.0)
+        val vMacro = ctx.slope.coerceIn(-2.0, 6.0)
 
 // Veiligste snelheid blijft: kleinste van macro en short-term
 // (maar met een heel kleine vloer zodat predictedPeak niet "stuck" raakt)
-        val v = maxOf(0.10, minOf(vMacro, v5))
+        // Detecteer herstel: recent stijgt, macro nog niet mee
+        val recoveryMode = v5 > 2.0 && vMacro < v5 * 0.5 && peakEstimator.active
+
+        val v = when {
+            recoveryMode -> v5 * 0.85  // Vertrouw meer op recent bij herstel
+            ctx.consistency >= config.minConsistency && v5 > vMacro ->
+                maxOf(0.10, vMacro * 0.3 + v5 * 0.7)  // 70/30, niet 50/50
+            else ->
+                maxOf(0.10, minOf(vMacro, v5))
+        }
 
 // ✅ Conservatief verbeteren: negatieve accel deels meenemen.
 // Bij afremmen (accel < 0) mag predictedPeak sneller omlaag.
@@ -2162,14 +2305,85 @@ class FCLvNext(
                 effectiveISF = ctx.input.effectiveISF
             )
 
-// Trek toekomstige insuline-impact af
-        var predictedPeak =
-            predictedPeakBallistic - futureDrop60
+// horizon factor (0..1) — als hEff 0.4h is, dan is het raar om 1.0h drop volledig af te trekken
+        val horizonFrac = hEff.coerceIn(0.15, 1.0)
 
-// Safety rails
-        predictedPeak = predictedPeak.coerceAtLeast(bgNow)
-        predictedPeak = predictedPeak.coerceIn(bgNow, config.peakPredictionMaxMmol)
+// alleen een deel van de 60m-drop aftrekken
+        val futureDropScaled = futureDrop60 * horizonFrac
 
+// cap: future drop mag niet vrijwel alle ballistic “rise” cancellen
+        val ballisticRise = (predictedPeakBallistic - bgNow).coerceAtLeast(0.0)
+        val futureDropCapped = futureDropScaled.coerceAtMost(ballisticRise * 0.85 + 0.4)
+
+        var predictedPeak = predictedPeakBallistic - futureDropCapped
+
+        // extra floor zolang macro echt stijgt (voorkomt “pred=bg” bij meal-rise)
+        if (ctx.slope >= 0.8 && ctx.acceleration >= 0.0 && ctx.deltaToTarget >= 1.0) {
+            predictedPeak = maxOf(predictedPeak, bgNow + 1.2)
+        }
+
+        // ─────────────────────────────────────────────
+// ✅ PEAK STATE TRANSITIONS (NOW ACTUALLY CHANGES state)
+// Place: right after predictedPeak is finalized, BEFORE band calculation
+// ─────────────────────────────────────────────
+
+// 1) Basic clamps so predictedPeak can't be below bgNow (prevents weird "nearPeak" logic)
+        predictedPeak = maxOf(predictedPeak, bgNow)
+
+// 2) Signals
+        val strongRise =
+            ctx.slope >= 0.6 ||
+                ctx.recentSlope >= 0.8 ||
+                ctx.recentDelta5m >= 0.10
+
+        val flattening =
+            (ctx.acceleration <= 0.05) &&
+                (ctx.recentSlope <= 0.25) &&
+                (kotlin.math.abs(ctx.recentDelta5m) <= 0.05)
+
+        val nearPredictedTop =
+            (predictedPeak - bgNow) <= 0.8
+
+// 3) State machine
+        when (peakEstimator.state) {
+
+            PeakPredictionState.IDLE -> {
+                // Start watching only when episode is active AND predicted peak is meaningfully high
+                if (
+                    peakEstimator.active &&
+                    ctx.consistency >= config.minConsistency &&
+                    predictedPeak >= 10.0 &&
+                    strongRise
+                ) {
+                    peakEstimator.state = PeakPredictionState.WATCHING
+                    peakEstimator.confirmCounter = 0
+                }
+            }
+
+            PeakPredictionState.WATCHING -> {
+                // Confirm only when we're near the top AND flattening is real (not one random sample)
+                if (peakEstimator.active && nearPredictedTop && flattening) {
+                    peakEstimator.confirmCounter += 1
+                    if (peakEstimator.confirmCounter >= 2) {   // 2 cycles confirm hysteresis
+                        peakEstimator.state = PeakPredictionState.CONFIRMED
+                    }
+                } else {
+                    peakEstimator.confirmCounter = 0
+                }
+
+                if (!peakEstimator.active) {
+                    peakEstimator.state = PeakPredictionState.IDLE
+                    peakEstimator.confirmCounter = 0
+                }
+            }
+
+            PeakPredictionState.CONFIRMED -> {
+                if (!peakEstimator.active) {
+                    peakEstimator.state = PeakPredictionState.IDLE
+                    peakEstimator.confirmCounter = 0
+                }
+            }
+        }
 
 
 
@@ -2535,12 +2749,19 @@ class FCLvNext(
             FCLvNextCsvLogger.log(logRow)
 
             // ⬇️ ÉÉN return
+
             return FCLvNextAdvice(
                 bolusAmount = 0.0,
                 basalRate = 0.0,
                 shouldDeliver = false,
                 effectiveISF = input.effectiveISF,
                 targetAdjustment = 0.0,
+
+                predictedPeak = predictedPeak,
+                peakBand = peak.peakBand,
+                peakState = peak.state.name,
+                secondDerivative = ctx.acceleration,
+
                 statusText = status.toString()
             )
         }
@@ -2561,12 +2782,16 @@ class FCLvNext(
         )
 
         // ✅ Pre-peak commit window: helpt IOB eerder opbouwen vóór de top
+        // Sta vroege commits toe bij duidelijke herstel-signalen, ook zonder active episode
         val prePeakCommitWindow =
-            peak.state == PeakPredictionState.WATCHING &&
-                peak.predictedPeak >= 15.0 &&
-                ctx.consistency >= 0.55 &&
-                ctx.iobRatio <= 0.50 &&
-                ctx.acceleration >= 0.00    // niet tijdens afremmen
+            (peak.state == PeakPredictionState.WATCHING ||
+                (peak.state == PeakPredictionState.IDLE &&
+                    ctx.recentSlope >= 1.5 &&
+                    ctx.deltaToTarget >= 1.5)) &&
+                peak.predictedPeak >= 9.5 &&  // ← Lager, 13.0 is te conservatief
+                ctx.consistency >= 0.50 &&      // ← Iets lager
+                ctx.iobRatio <= 0.60 &&          // ← Hoger, 0.50 is te strikt bij herstel
+                ctx.acceleration >= -0.05         // ← Iets negatief toestaan bij herstel
 
         status.append("PrePeakCommitWindow=${if (prePeakCommitWindow) "YES" else "NO"}\n")
 
@@ -2694,8 +2919,11 @@ class FCLvNext(
             )
             finalDose = 0.0
         }
+        val preBolusActiveNow = preBolusController.isActive(now)
+        val mealContextActive = (mealIntent != null) || preBolusActiveNow
+        
 
-        val postPeak = evaluatePostPeak(ctx, mealSignal, peak, now, config)
+        val postPeak = evaluatePostPeak(ctx, mealSignal, peak, now, config, mealContextActive)
         status.append(postPeak.reason + "\n")
 
         // ✅ NIEUW: early reset zodra afremmen/omkeer start
@@ -2964,22 +3192,29 @@ class FCLvNext(
 // 9️⃣ Meal detectie & commit/observe + peak suppression + re-entry
 // ─────────────────────────────────────────────
 
-        //   val commitAllowed = canCommitNow(now, config)
-        val commitAllowed = canCommitNow(now, ctx, config)
+
+        val firstCommitBypass =
+            lastCommitAt == null && mealSignal.state == MealState.CONFIRMED
+
+        val commitAllowed = firstCommitBypass || canCommitNow(now, ctx, config)
 
 // ─────────────────────────────────────────────
 // 🧠 LEARNING: commit fraction (single source)
 // ─────────────────────────────────────────────
 
-        val commitFraction =
+        val baseCommitFraction =
             if (mealSignal.state != MealState.NONE) {
-                computeCommitFraction(
-                    signal = mealSignal,
-                    config = config
-                )
-            } else {
-                0.0
-            }
+                computeCommitFraction(signal = mealSignal, config = config)
+            } else 0.0
+
+        val aggr = computeMealAggression(ctx, peak, mealSignal, config)
+        status.append(aggr.reason + "\n")
+
+// aggression → multiplier 0.85 .. 1.25 (mild, safe)
+// (als je agressiever wil: max 1.35)
+        val aggrMul = lerp(0.85, 1.25, aggr.a)
+
+        val commitFraction = (baseCommitFraction * aggrMul).coerceIn(0.0, 1.0)
 
 
         var didCommitThisCycle = false
@@ -3055,16 +3290,17 @@ class FCLvNext(
             status.append("DOWNTREND: commit skipped (LOCKED)\n")
         } else if (allowCommitPath && effectiveMeal) {
 
-            // ✅ Commit boost mag óók via pre-peak window (timing fix)
-            val allowCommitBoost =
-                prePeakCommitWindow ||
-                    (trend.state == TrendState.RISING_CONFIRMED)
+            val accelFirst = accelFirstCommitTrigger(
+                ctx = ctx,
+                peak = peak,
+                mealSignal = mealSignal,
+                config = config,
+                prePeakCommitWindow = prePeakCommitWindow,
+                trend = trend
+            )
+            status.append(accelFirst.reason + "\n")
 
-            if (!allowCommitBoost) {
-                status.append("COMMIT gated (trend=${trend.state}, prePeakWindow=${prePeakCommitWindow})\n")
-            } else if (prePeakCommitWindow && !trendConfirmed) {
-                status.append("COMMIT boost via PRE-PEAK window (trend not persistent yet)\n")
-            }
+            val allowCommitBoost = accelFirst.ok
 
 
             val effectiveCommitAllowed =
@@ -3087,14 +3323,14 @@ class FCLvNext(
                 )
 
                 val commitAccessOk = (accessLevel == DoseAccessLevel.NORMAL)
-
                 if (!commitAccessOk) {
                     status.append("COMMIT limited by ACCESS ($accessLevel)\n")
                 }
 
+// ✅ blijft bestaan: pre-peak commit window geeft iets minder agressief committen
                 val prePeakMul = if (prePeakCommitWindow) 0.85 else 1.0
 
-
+// Plateau/top penalty om te voorkomen dat commit nog doorduwt als fast-lane al afvlakt
                 val nearPeak =
                     peak.predictedPeak >= 9.5 &&
                         (peak.predictedPeak - ctx.input.bgNow) <= 0.8
@@ -3113,17 +3349,17 @@ class FCLvNext(
                         (1.0 - 0.75 * sev).coerceIn(0.25, 0.85)
                     } else 1.0
 
+                if (rawPlateauPenalty < 1.0) {
+                    status.append("COMMIT rawPlateauPenalty=${"%.2f".format(rawPlateauPenalty)}\n")
+                }
 
-                if (rawPlateauPenalty < 1.0) status.append("COMMIT rawPlateauPenalty=${"%.2f".format(rawPlateauPenalty)}\n")
-
+                val commitAggressionMul = lerp(0.90, 1.20, aggr.a)
 
                 val commitDose =
                     if (allowCommitBoost && commitAccessOk)
-                        (config.maxSMB * fraction * commitIobFactor * prePeakMul * postPeak.commitFactor * rawPlateauPenalty)
+                        (config.maxSMB * fraction * commitIobFactor * prePeakMul * postPeak.commitFactor * rawPlateauPenalty * commitAggressionMul)
                             .coerceAtMost(config.maxSMB)
                     else 0.0
-
-
 
                 val committedDose =
                     if (peakCategory >= PeakCategory.HIGH)
@@ -3131,23 +3367,30 @@ class FCLvNext(
                     else
                         maxOf(finalDose, commitDose)
 
+
                 val effectiveMinCommitDose = when {
+                    // al bestaande
                     ctx.deltaToTarget >= 3.0 && ctx.iobRatio < 0.3 ->
-                        config.minCommitDose * 0.7  // 0.21U i.p.v. 0.30U
+                        config.minCommitDose * 0.7
+
+                    // ✅ nieuw: duidelijke meal-trend, nog voldoende iob-ruimte
+                    (mealSignal.state != MealState.NONE) &&
+                        ctx.slope >= 0.8 &&
+                        ctx.acceleration >= 0.15 &&
+                        ctx.iobRatio < 0.35 ->
+                        config.minCommitDose * 0.6   // 0.18U als minCommitDose=0.30
+
                     else ->
                         config.minCommitDose
                 }
 
                 if (committedDose >= effectiveMinCommitDose) {
 
-                    //   if (committedDose >= config.minCommitDose) {
-
                     commandedDose = committedDose
 
                     lastCommitAt = now
                     lastCommitDose = committedDose
-                    lastCommitReason =
-                        "${mealSignal.state} frac=${"%.2f".format(fraction)}"
+                    lastCommitReason = "${mealSignal.state} frac=${"%.2f".format(fraction)}"
 
                     didCommitThisCycle = true
 
@@ -3794,6 +4037,12 @@ class FCLvNext(
             shouldDeliver = shouldDeliver,
             effectiveISF = input.effectiveISF,
             targetAdjustment = 0.0,
+
+            predictedPeak = predictedPeak,
+            peakBand = peak.peakBand,
+            peakState = peak.state.name,
+            secondDerivative = ctx.acceleration,
+
             statusText = status.toString()
         )
     }

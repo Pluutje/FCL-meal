@@ -7,6 +7,9 @@ import app.aaps.plugins.aps.openAPSFCL.vnext.learning.*
 import app.aaps.core.interfaces.meal.MealIntentRepository
 import app.aaps.core.interfaces.meal.MealIntentType
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
+import app.aaps.plugins.aps.openAPSFCL.vnext.ui.BgCurveAnalyzer
+import app.aaps.plugins.aps.openAPSFCL.vnext.ui.BgCurveSnapshot
+import app.aaps.plugins.aps.openAPSFCL.vnext.ui.CurveAnalysisFormatter
 
 private const val UI_EPISODES_TO_SHOW = 5
 
@@ -15,8 +18,7 @@ data class FclUiSnapshot(
     val iob: Double,
     val delta5m: Double?,
     val slopeHr: Double?,
-    val predictedPeak: Double?,
-    val peakBand: Int?
+    val predictedPeak: Double?
 )
 
 
@@ -146,13 +148,13 @@ class FCLvNextStatusFormatter(
     }
 
 
-
-
     /**
      * Maak statusText compacter:
      * - toont eerst profiel + learning advice (als aanwezig)
      * - daarna eventueel de rest van statusText (optioneel, compact)
      */
+    private val curveAnalyzer = BgCurveAnalyzer()
+
     private fun buildFclBlock(
         advice: FCLvNextAdvice?,
         ui: FclUiSnapshot,
@@ -164,11 +166,10 @@ class FCLvNextStatusFormatter(
         if (advice == null) return "Geen FCL advies"
 
         val sb = StringBuilder()
-
         sb.append("🧠 FCL vNext\n")
         sb.append("─────────────────────\n")
 
-        // 📈 Situatie
+        // Basis gegevens
         sb.append("📈 Situatie\n")
         sb.append("─────────────────────\n")
         sb.append("• Glucose: ${"%.1f".format(ui.bgNow)} mmol/L\n")
@@ -178,26 +179,43 @@ class FCLvNextStatusFormatter(
             sb.append("• Verandering (5m): ${"%.2f".format(it)} mmol/L\n")
         }
 
-        val (parsedPeak, parsedBand) = parsePeakFromStatus(advice.statusText)
+        // ⭐ KERN: Curve analyse via aparte module
+        val snapshot = BgCurveSnapshot(
+            bgNow = ui.bgNow,
+            iob = ui.iob,
+            slope = ui.slopeHr,
+            delta5m = ui.delta5m,
+            acceleration = advice.secondDerivative,
+            predictedPeak = ui.predictedPeak
+        )
 
-        val peakToShow = ui.predictedPeak ?: parsedPeak
-        val bandToShow = ui.peakBand ?: parsedBand
+        val analysis = curveAnalyzer.analyze(snapshot)
+        sb.append(CurveAnalysisFormatter.formatForStatus(analysis))
 
-        peakToShow?.let {
-            val bandTxt = bandToShow?.let { b -> " (band ≥$b)" } ?: ""
-            sb.append("• Verwachte piek: ${"%.1f".format(it)} mmol/L$bandTxt\n")
+// ─────────────────────────────
+// 🔎 FCL core status (belangrijker dan curve)
+// ─────────────────────────────
+
+        advice.peakState?.let { state ->
+            val uitleg = when (state) {
+                "IDLE" -> "Geen actieve stijging"
+                "WATCHING" -> "Sterke stijging actief"
+                "CONFIRMED" -> "Piek bevestigd – afremming verwacht"
+                else -> state
+            }
+            sb.append("\n")
+            sb.append("• FCL piekstatus: $uitleg\n")
         }
 
-        ui.slopeHr?.let {
-            sb.append("• Trend: ${humanTrend(it)}\n")
+        advice.predictedPeak?.let {
+            sb.append("• Verwachte FCL-piek: ${"%.1f".format(it)} mmol/L\n")
         }
 
         sb.append("\n")
 
-        // 💉 Advies
+        // Advies sectie (bestaande logica, verkort)
         sb.append("💉 Advies\n")
         sb.append("─────────────────────\n")
-
         if (!shouldDeliver || (bolusAmount == 0.0 && basalRate == 0.0)) {
             sb.append("• Geen extra insuline nodig\n")
         } else {
@@ -205,48 +223,14 @@ class FCLvNextStatusFormatter(
             sb.append("• Extra insuline nu: ${"%.2f".format(total)} U\n")
         }
 
-        sb.append("\n")
-
-        // ⏳ Timing
-        sb.append("⏳ Timing\n")
+        sb.append("\n⏳ Timing\n")
         sb.append("─────────────────────\n")
         sb.append(if (shouldDeliver) "• Toediening nu\n" else "• Geen toediening\n")
 
         return sb.toString().trimEnd()
     }
 
-    private fun humanTrend(slope: Double): String =
-        when {
-            slope < -0.5 -> "Dalend"
-            slope < 0.5  -> "Stabiel"
-            slope < 1.5  -> "Licht stijgend"
-            else         -> "Snel stijgend"
-        }
 
-    private fun parsePeakFromStatus(statusText: String?): Pair<Double?, Int?> {
-        if (statusText.isNullOrBlank()) return null to null
-
-        val line = statusText.lineSequence()
-            .firstOrNull { it.startsWith("PeakEstimate=") }
-            ?: return null to null
-
-        fun findDouble(key: String): Double? {
-            val m = Regex("""\b${Regex.escape(key)}=([0-9]+(?:\.[0-9]+)?)""")
-                .find(line) ?: return null
-            return m.groupValues[1].toDoubleOrNull()
-        }
-
-        fun findInt(key: String): Int? {
-            val m = Regex("""\b${Regex.escape(key)}=([0-9]+)""")
-                .find(line) ?: return null
-            return m.groupValues[1].toIntOrNull()
-        }
-
-        val peak = findDouble("pred")
-        val band = findInt("band")
-
-        return peak to band
-    }
 
     private fun humanLearningStatus(status: SnapshotStatus): String =
         when (status) {
@@ -586,11 +570,10 @@ ${resistanceLog ?: "Geen resistentie-log"}
 ${metricsText ?: "Nog geen data"}
 """.trimIndent()
 
-        // Huidige versie FCL V4
 
         return """
 ════════════════════════
- 🧠 FCL meal V4 v1.3.3
+ 🧠 FCL meal V4 v1.4.2
  
 ════════════════════════
 • Height (sterkte)     : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}

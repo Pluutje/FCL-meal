@@ -520,8 +520,7 @@ class DetermineBasalFCL @Inject constructor(
                 iob = currentIOB,
                 delta5m = trendAnalysis?.recentDelta5m,
                 slopeHr = trendAnalysis?.firstDerivative,
-                predictedPeak = null,   // later uitbreidbaar
-                peakBand = null
+                predictedPeak = advice.predictedPeak
             )
             val uiText = statusFormatter.buildStatus(
                 isNight = isNight,

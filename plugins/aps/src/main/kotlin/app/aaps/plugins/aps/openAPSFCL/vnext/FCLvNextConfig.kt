@@ -205,7 +205,7 @@ fun loadFCLvNextConfig(
 
         // ✅ Distribution base (BALANCED)
         // (PULSED/SMOOTH schalen dit)
-        smallDoseThresholdU = 0.40,
+        smallDoseThresholdU = 0.30,
         microCapFracOfMaxSmb = 0.2,
         smallCapFracOfMaxSmb = 0.4,
 
