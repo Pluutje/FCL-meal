@@ -19,6 +19,7 @@ data class FCLvNextConfig(
     val mealDetectSpeed: String,
     val correctionStyle: String,
     val doseDistributionStyle: String,  // ✅ NEW
+    val mealHandlingStyle: String,
 
     // smoothing
     val bgSmoothingAlpha: Double,
@@ -150,7 +151,21 @@ data class FCLvNextConfig(
     val peakPredictionMaxMmol: Double,
 
     // trend persistence
-    val trendConfirmCycles: Int
+    val trendConfirmCycles: Int,
+
+    // =================================================
+    // 🍽️ MEAL HANDLING (behandel-gedrag ná detectie)
+    // Beïnvloedt hoe agressief WATCHING reageert
+    // =================================================
+
+
+
+// frontload gedrag (BALANCED defaults)
+    val watchingFrontloadFrac: Double,     // fractie van normalDose
+    val watchingMinSlope: Double,          // minimale slope voor frontload
+    val watchingMinDeltaToTarget: Double,  // minimale overshoot
+    val watchingMinPeakRise: Double,       // minimale peakRiseSinceStart
+    val watchingMaxIobRatio: Double        // safety cap
 )
 
 fun loadFCLvNextConfig(
@@ -162,7 +177,7 @@ fun loadFCLvNextConfig(
     val mealDetectSpeed =  prefs.get(StringKey.fcl_vnext_meal_detect_speed)
     val correctionStyle =  prefs.get(StringKey.fcl_vnext_correction_style)
     val doseDistributionStyle = prefs.get(StringKey.fcl_vnext_dose_distribution_style) // ✅ NEW
-
+    val mealHandlingStyle = prefs.get(StringKey.fcl_vnext_meal_handling_style)
 
     val gain =
         if (isNight) prefs.get(DoubleKey.fcl_vnext_gain_night)
@@ -191,6 +206,7 @@ fun loadFCLvNextConfig(
         mealDetectSpeed = mealDetectSpeed,
         correctionStyle = correctionStyle,
         doseDistributionStyle = doseDistributionStyle,
+        mealHandlingStyle = mealHandlingStyle,
 
         // =================================================
         // 🧠 LEARNING BASE (startwaarden)
@@ -312,7 +328,16 @@ fun loadFCLvNextConfig(
         peakUseMaxAccelFrac = 0.5,
         peakPredictionMaxMmol = 25.0,
 
-        trendConfirmCycles = 2
+        trendConfirmCycles = 2,
+
+
+        watchingFrontloadFrac = 0.65,     // was 0.55
+        watchingMinSlope = 0.30,           // was 0.35
+        watchingMinDeltaToTarget = 2.0,    // was 2.5
+        watchingMinPeakRise = 0.6,         // was 0.8
+        watchingMaxIobRatio = 0.75,        // onveranderd
+
+
     )
 
     return base
@@ -320,6 +345,8 @@ fun loadFCLvNextConfig(
         .let { applyMealDetectSpeed(it) }
         .let { applyCorrectionStyle(it) }
         .let { applyDoseDistributionStyle(it) }
+        .let { applyMealHandlingStyle(it) }
+        .let { applyMealHandlingGainScaling(it) } // 👈 nieuw
 }
 
 private fun applyProfileDoseStrength(
@@ -477,6 +504,65 @@ private fun applyCorrectionStyle(
 
         else -> cfg
     }
+}
+
+private fun applyMealHandlingStyle(
+    cfg: FCLvNextConfig
+): FCLvNextConfig {
+
+    return when (cfg.mealHandlingStyle) {
+
+        "VERY_CONSERVATIVE" -> cfg.copy(
+            watchingFrontloadFrac = (cfg.watchingFrontloadFrac - 0.30).coerceIn(0.20, 0.80),
+            watchingMinSlope = cfg.watchingMinSlope + 0.15,
+            watchingMinDeltaToTarget = cfg.watchingMinDeltaToTarget + 1.5,
+            watchingMinPeakRise = cfg.watchingMinPeakRise + 0.6,
+            watchingMaxIobRatio = (cfg.watchingMaxIobRatio - 0.15).coerceIn(0.40, 0.90)
+        )
+
+        "CONSERVATIVE" -> cfg.copy(
+            watchingFrontloadFrac = (cfg.watchingFrontloadFrac - 0.15).coerceIn(0.20, 0.80),
+            watchingMinSlope = cfg.watchingMinSlope + 0.08,
+            watchingMinDeltaToTarget = cfg.watchingMinDeltaToTarget + 0.8,
+            watchingMinPeakRise = cfg.watchingMinPeakRise + 0.3,
+            watchingMaxIobRatio = (cfg.watchingMaxIobRatio - 0.10).coerceIn(0.40, 0.90)
+        )
+
+        "ANTICIPATORY" -> cfg.copy(
+            watchingFrontloadFrac = (cfg.watchingFrontloadFrac + 0.10).coerceIn(0.20, 0.85),
+            watchingMinSlope = (cfg.watchingMinSlope - 0.05).coerceAtLeast(0.15),
+            watchingMinDeltaToTarget = (cfg.watchingMinDeltaToTarget - 0.5).coerceAtLeast(0.5),
+            watchingMinPeakRise = (cfg.watchingMinPeakRise - 0.2).coerceAtLeast(0.2),
+            watchingMaxIobRatio = (cfg.watchingMaxIobRatio + 0.05).coerceIn(0.40, 0.90)
+        )
+
+        "AGGRESSIVE" -> cfg.copy(
+            watchingFrontloadFrac = (cfg.watchingFrontloadFrac + 0.20).coerceIn(0.20, 0.90),
+            watchingMinSlope = (cfg.watchingMinSlope - 0.10).coerceAtLeast(0.10),
+            watchingMinDeltaToTarget = (cfg.watchingMinDeltaToTarget - 0.8).coerceAtLeast(0.3),
+            watchingMinPeakRise = (cfg.watchingMinPeakRise - 0.3).coerceAtLeast(0.1),
+            watchingMaxIobRatio = (cfg.watchingMaxIobRatio + 0.10).coerceIn(0.40, 0.95)
+        )
+
+        else -> cfg // BALANCED = baseline
+    }
+}
+
+private fun applyMealHandlingGainScaling(
+    cfg: FCLvNextConfig
+): FCLvNextConfig {
+
+    val scaledGain = when (cfg.mealHandlingStyle) {
+        "VERY_CONSERVATIVE" -> cfg.gain * 0.95
+        "CONSERVATIVE"      -> cfg.gain * 0.98
+        "ANTICIPATORY"      -> cfg.gain * 1.02
+        "AGGRESSIVE"        -> cfg.gain * 1.05
+        else                -> cfg.gain
+    }
+
+    return cfg.copy(
+        gain = scaledGain.coerceIn(0.2, 2.0)
+    )
 }
 
 

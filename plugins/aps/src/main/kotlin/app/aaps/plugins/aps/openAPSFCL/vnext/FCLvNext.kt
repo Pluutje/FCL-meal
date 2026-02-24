@@ -1124,7 +1124,7 @@ private fun updateRescueDetection(
                 val inWindow = dt in confirmMinMinutes..confirmMaxMinutes
                 val rebound = (ctx.acceleration >= reboundAccelMin && ctx.slope >= reboundSlopeMin)
 
-                val deliveredTotalSince = deliveredSince(t0) + deliveredThisCycle
+                val deliveredTotalSince = deliveredSince(t0) // + deliveredThisCycle
                 val noInsulin = deliveredTotalSince <= maxDeliveredSinceArmed
 
                 if (inWindow && rebound && noInsulin) {
@@ -3186,6 +3186,34 @@ class FCLvNext(
             finalDose = config.maxSMB
         }
 
+        // ─────────────────────────────────────────────
+        // 🍽️ WATCHING FRONTLOAD (mealHandlingStyle)
+        // ─────────────────────────────────────────────
+
+        if (
+            peak.state == PeakPredictionState.WATCHING &&
+            ctx.slope >= config.watchingMinSlope &&
+            ctx.deltaToTarget >= config.watchingMinDeltaToTarget &&
+            peak.riseSinceStart >= config.watchingMinPeakRise &&
+            ctx.iobRatio <= config.watchingMaxIobRatio &&
+            !suppressForPeak &&
+            !postPeak.lockout &&
+            !postPeak.sensorBlip &&
+            zoneEnum != BgZone.LOW
+        ) {
+
+            val frontloadTarget =
+                (config.maxSMB * config.watchingFrontloadFrac)
+                    .coerceAtMost(config.maxSMB)
+
+            if (finalDose < frontloadTarget) {
+                status.append(
+                    "WATCHING FRONTLOAD (${config.mealHandlingStyle}): " +
+                        "${"%.2f".format(finalDose)}→${"%.2f".format(frontloadTarget)}U\n"
+                )
+                finalDose = frontloadTarget
+            }
+        }
 
 
 // ─────────────────────────────────────────────

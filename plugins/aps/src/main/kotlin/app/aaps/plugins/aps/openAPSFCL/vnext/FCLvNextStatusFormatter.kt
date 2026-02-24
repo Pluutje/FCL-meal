@@ -40,41 +40,50 @@ class FCLvNextStatusFormatter(
     }
     private fun profileLabel(value: String): String =
         when (value) {
-            "VERY_STRICT" -> "Zeer voorzichtig"
-            "STRICT"      -> "Voorzichtig"
-            "BALANCED"    -> "Gebalanceerd"
-            "AGGRESSIVE"   -> "Actief"
-            "VERY_AGGRESSIVE"  -> "Zeer actief"
+            "VERY_STRICT" -> "\uD83D\uDEE1\uFE0F Zeer voorzichtig"
+            "STRICT"      -> "\uD83E\uDDEF Voorzichtig"
+            "BALANCED"    -> "⚖\uFE0F Gebalanceerd"
+            "AGGRESSIVE"   -> "\uD83D\uDE80 Actief"
+            "VERY_AGGRESSIVE"  -> "\uD83D\uDD25 Zeer actief"
             else          -> value
         }
 
     private fun mealDetectLabel(value: String): String =
         when (value) {
-            "VERY_SLOW"  -> "Zeer laat"
-            "SLOW"       -> "Laat"
-            "MODERATE"   -> "Normaal"
-            "FAST"       -> "Snel"
-            "VERY_FAST" -> "Zeer snel"
+            "VERY_SLOW"  -> "\uD83D\uDC22 Zeer laat"
+            "SLOW"       -> "\uD83D\uDC0C Laat"
+            "MODERATE"   -> "⚖\uFE0F Normaal"
+            "FAST"       -> "⚡ Snel"
+            "VERY_FAST" -> "\uD83D\uDEA8 Zeer snel"
+            else         -> value
+        }
+    private fun mealLabel(value: String): String =
+        when (value) {
+            "VERY_CONSERVATIVE"  -> "\uD83D\uDED1 Zeer voorzichtig"
+            "CONSERVATIVE"       -> "\uD83D\uDC22 Voorzichtig"
+            "BALANCED"   -> "⚖\uFE0F Gebalanceerd"
+            "ANTICIPATORYT"       -> "⚡ Anticiperend"
+            "AGGRESSIVE" -> "\uD83D\uDE80 Agressief"
             else         -> value
         }
 
     private fun correctionStyleLabel(value: String): String =
         when (value) {
-            "VERY_CAUTIOUS" -> "Zeer terughoudend"
-            "CAUTIOUS"      -> "Voorzichtig"
-            "NORMAL"        -> "Normaal"
-            "PERSISTENT"    -> "Vasthoudend"
-            "VERY_PERSISTENT" -> "Zeer vasthoudend"
+            "VERY_CAUTIOUS" -> "\uD83D\uDED1 Zeer terughoudend"
+            "CAUTIOUS"      -> "\uD83E\uDDEF Voorzichtig"
+            "NORMAL"        -> "⚖\uFE0F Normaal"
+            "PERSISTENT"    -> "\uD83D\uDD01 Vasthoudend"
+            "VERY_PERSISTENT" -> "\uD83D\uDD02 Zeer vasthoudend"
             else            -> value
         }
 
     private fun doseDistributionLabel(value: String): String =
         when (value) {
-            "VERY_SMOOTH"        -> "Ultra smooth"
-            "SMOOTH"      -> "Smooth"
-            "BALANCED"        -> "Gebalanceerd"
-            "PULSED" -> "Pulsed"
-            "VERY_PULSED" -> "Ultra pulsed"
+            "VERY_SMOOTH"        -> "\uD83C\uDF0A Ultra smooth"
+            "SMOOTH"      -> "\uD83E\uDEE7 Smooth"
+            "BALANCED"        -> "⚖\uFE0F Balanced"
+            "PULSED" -> "\uD83D\uDD28 Pulsed"
+            "VERY_PULSED" -> "⚡ Ultra pulsed"
             else            -> value
         }
 
@@ -573,11 +582,12 @@ ${metricsText ?: "Nog geen data"}
 
         return """
 ════════════════════════
- 🧠 FCL meal V4 v1.4.2
+ 🧠 FCL meal V4 v2.0.1
  
 ════════════════════════
 • Height (sterkte)     : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}
 • Timing (reactietijd) : ${mealDetectLabel(prefs.get(StringKey.fcl_vnext_meal_detect_speed))}
+• Maaltijd behandeling : ${mealLabel(prefs.get(StringKey.fcl_vnext_meal_handling_style))}
 • Persistentie        : ${correctionStyleLabel(prefs.get(StringKey.fcl_vnext_correction_style))}
 • Insulineverdeling    : ${doseDistributionLabel(prefs.get(StringKey.fcl_vnext_dose_distribution_style))}
 

@@ -313,7 +313,7 @@ De instellingen zijn bewust overzichtelijk gehouden en ingedeeld in drie groepen
         <item>🧯 Voorzichtig</item>
         <item>⚖️ Gebalanceerd (standaard)</item>
         <item>🚀 Actief</item>
-        <item>🔥 Zeer actief (sneller corrigeren)</item>
+        <item>🔥 Zeer actief (hoger corrigeren)</item>
     </string-array>
 
     <string-array name="fcl_vnext_profile_values">
@@ -345,6 +345,29 @@ De instellingen zijn bewust overzichtelijk gehouden en ingedeeld in drie groepen
         <item>MODERATE</item>
         <item>FAST</item>
         <item>VERY_FAST</item>
+    </string-array>
+
+    <!-- ===============================
+     Meal handling (treatment behaviour)
+     =============================== -->
+
+    <string name="fcl_vnext_meal_handling_title">🍽️ Maaltijd behandeling</string>
+    <string name="fcl_vnext_meal_handling_summary">Hoe krachtig FCL reageert tijdens de eerste stijging (WATCHING fase).Beïnvloedt vroege dosisopbouw, niet detectiesnelheid.</string>
+
+    <string-array name="fcl_vnext_meal_handling_entries">
+        <item>🛑 Zeer voorzichtig</item>
+        <item>🐢 Voorzichtig</item>
+        <item>⚖️ Gebalanceerd (standaard)</item>
+        <item>⚡ Anticiperend</item>
+        <item>🚀 Agressief</item>
+    </string-array>
+
+    <string-array name="fcl_vnext_meal_handling_values">
+        <item>VERY_CONSERVATIVE</item>
+        <item>CONSERVATIVE</item>
+        <item>BALANCED</item>
+        <item>ANTICIPATORY</item>
+        <item>AGGRESSIVE</item>
     </string-array>
 
 

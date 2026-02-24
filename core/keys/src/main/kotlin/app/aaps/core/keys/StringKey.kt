@@ -64,6 +64,7 @@ enum class StringKey(
 
     fcl_vnext_profile(key = "fcl_vnext_profile", "BALANCED"),
     fcl_vnext_meal_detect_speed(key = "fcl_vnext_meal_detect_speed", "MODERATE"),
+    fcl_vnext_meal_handling_style(key = "fcl_vnext_meal_handling_style", defaultValue = "BALANCED"),
     fcl_vnext_correction_style(key = "fcl_vnext_correction_style", "NORMAL"),
     fcl_vnext_dose_distribution_style(key = "fcl_vnext_dose_distribution_style", "BALANCED"),
 

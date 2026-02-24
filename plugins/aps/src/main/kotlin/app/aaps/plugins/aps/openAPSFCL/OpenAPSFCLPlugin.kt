@@ -609,6 +609,32 @@ open class OpenAPSFCLPlugin @Inject constructor(
                         .toTypedArray()
                 )
             )
+            // Meal handling (WATCHING gedrag)
+            addPreference(
+                AdaptiveInfoPreference(
+                    context,
+                    R.string.fcl_vnext_meal_handling_title,
+                    R.string.fcl_vnext_meal_handling_summary
+                )
+            )
+
+            addPreference(
+                AdaptiveListPreference(
+                    ctx = context,
+                    stringKey = StringKey.fcl_vnext_meal_handling_style,
+                    title = R.string.fcl_vnext_generic_choice_title,
+                    summary = null,
+                    entries = context.resources
+                        .getStringArray(R.array.fcl_vnext_meal_handling_entries)
+                        .map { it as CharSequence }
+                        .toTypedArray(),
+                    entryValues = context.resources
+                        .getStringArray(R.array.fcl_vnext_meal_handling_values)
+                        .map { it as CharSequence }
+                        .toTypedArray()
+                )
+            )
+
             addPreference(
                 AdaptiveInfoPreference(
                     context,
