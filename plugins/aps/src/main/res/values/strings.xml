@@ -394,6 +394,33 @@ Hoe volhardend FCL blijft corrigeren als glucose hoog blijft zonder actieve maal
         <item>VERY_PERSISTENT</item>
     </string-array>
 
+    <!-- ===============================
+     Hypo Protection (Safety Axis)
+     =============================== -->
+
+    <string name="fcl_vnext_hypo_protection_title">🛡️ Hypo protectie (veiligheidsgevoeligheid)</string>
+
+    <string name="fcl_vnext_hypo_protection_summary">
+Bepaalt hoe streng FCL toekomstige lage glucose voorspellingen behandelt.
+Beïnvloedt alleen veiligheid, niet agressiviteit van stijgingscorrectie.
+</string>
+
+    <string-array name="fcl_vnext_hypo_protection_entries">
+        <item>🟢 Minimale bescherming (laat blokkade later ingrijpen)</item>
+        <item>🔵 Licht beschermend</item>
+        <item>⚖️ Gebalanceerd (standaard)</item>
+        <item>🟡 Verhoogde bescherming</item>
+        <item>🔴 Maximale bescherming</item>
+    </string-array>
+
+    <string-array name="fcl_vnext_hypo_protection_values">
+        <item>MINIMAL</item>
+        <item>RELAXED</item>
+        <item>BALANCED</item>
+        <item>SAFE</item>
+        <item>ULTRA_SAFE</item>
+    </string-array>
+
 
     <!-- ===============================
      Dosis verhouding gedrag

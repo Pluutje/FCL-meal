@@ -90,6 +90,19 @@
             android:visibility="gone"
             app:iconPadding="-4dp" />
 
+        <!-- Analyzer -->
+        <app.aaps.core.ui.elements.SingleClickButton
+            android:id="@+id/analyzer_button"
+            style="@style/ButtonSmallFontStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="0.5"
+            android:minHeight="@dimen/overview_action_button_height"
+            android:drawableTop="@drawable/ic_analyser"
+            android:text="Analyzer"
+            android:textColor="#00ACC1"
+            app:iconPadding="-4dp" />
+
         <!-- Wizard -->
         <app.aaps.core.ui.elements.SingleClickButton
             android:id="@+id/wizard_button"

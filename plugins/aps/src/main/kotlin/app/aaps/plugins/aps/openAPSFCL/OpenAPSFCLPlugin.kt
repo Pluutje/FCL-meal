@@ -3,9 +3,9 @@ package app.aaps.plugins.aps.openAPSFCL
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.util.LongSparseArray
+
 import androidx.annotation.StringRes
-import androidx.core.util.forEach
+
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
@@ -15,7 +15,7 @@ import androidx.preference.Preference
 import app.aaps.core.data.aps.SMBDefaults
 import app.aaps.core.data.model.GlucoseUnit
 import app.aaps.core.data.plugin.PluginType
-import app.aaps.core.data.time.T
+
 import app.aaps.core.interfaces.aps.APS
 import app.aaps.core.interfaces.aps.APSResult
 import app.aaps.core.interfaces.aps.AutosensResult
@@ -33,7 +33,7 @@ import app.aaps.core.interfaces.iob.GlucoseStatusProvider
 import app.aaps.core.interfaces.iob.IobCobCalculator
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
-import app.aaps.core.interfaces.notifications.Notification
+
 import app.aaps.core.interfaces.plugin.ActivePlugin
 import app.aaps.core.interfaces.plugin.PluginBase
 import app.aaps.core.interfaces.plugin.PluginDescription
@@ -56,8 +56,7 @@ import app.aaps.core.keys.IntentKey
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.StringKey
 import app.aaps.core.keys.UnitDoubleKey
-// import app.aaps.core.objects.aps.DetermineBasalResult
-//import app.aaps.implementation.aps.DetermineBasalResult
+
 import app.aaps.core.objects.constraints.ConstraintObject
 import app.aaps.core.objects.extensions.convertedToAbsolute
 import app.aaps.core.objects.extensions.getPassedDurationToTimeInMinutes
@@ -65,7 +64,7 @@ import app.aaps.core.objects.extensions.plannedRemainingMinutes
 import app.aaps.core.objects.extensions.put
 import app.aaps.core.objects.extensions.store
 import app.aaps.core.objects.extensions.target
-import app.aaps.core.objects.profile.ProfileSealed
+
 import app.aaps.core.utils.MidnightUtils
 import app.aaps.core.validators.preferences.AdaptiveDoublePreference
 import app.aaps.core.validators.preferences.AdaptiveIntPreference
@@ -81,15 +80,14 @@ import app.aaps.plugins.aps.R
 
 import app.aaps.plugins.aps.events.EventOpenAPSUpdateGui
 import app.aaps.plugins.aps.events.EventResetOpenAPSGui
-import app.aaps.plugins.aps.openAPS.TddStatus
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsSnapshot
+
+
 import dagger.android.HasAndroidInjector
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
-import kotlin.math.floor
-import kotlin.math.ln
+
 
 @Singleton
 open class OpenAPSFCLPlugin @Inject constructor(
@@ -561,7 +559,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
                     summary = R.string.fcl_vnext_1_PROFIEL_summary
                 )
             )
-// Profielkeuze
+// Profielkeuze   Height
             addPreference(
                 AdaptiveInfoPreference(
                     context,
@@ -659,6 +657,32 @@ open class OpenAPSFCLPlugin @Inject constructor(
                         .toTypedArray()
                 )
             )
+            // Hypo Protection (Safety axis)
+            addPreference(
+                AdaptiveInfoPreference(
+                    context,
+                    R.string.fcl_vnext_hypo_protection_title,
+                    R.string.fcl_vnext_hypo_protection_summary
+                )
+            )
+
+            addPreference(
+                AdaptiveListPreference(
+                    ctx = context,
+                    stringKey = StringKey.fcl_vnext_hypo_protection_style,
+                    title = R.string.fcl_vnext_generic_choice_title,
+                    summary = null,
+                    entries = context.resources
+                        .getStringArray(R.array.fcl_vnext_hypo_protection_entries)
+                        .map { it as CharSequence }
+                        .toTypedArray(),
+                    entryValues = context.resources
+                        .getStringArray(R.array.fcl_vnext_hypo_protection_values)
+                        .map { it as CharSequence }
+                        .toTypedArray()
+                )
+            )
+
      // Insulin distribution
             addPreference(
                 AdaptiveInfoPreference(
@@ -1011,14 +1035,6 @@ open class OpenAPSFCLPlugin @Inject constructor(
         parent.addPreference(MEAL_INTENT)
      //   parent.addPreference(SAFETY)
     }
-
-    fun getLearningSnapshot(): FCLvNextObsSnapshot? {
-        return determineBasalFCL.getLearningSnapshot()
-    }
-
-
-
-
 
 
 }

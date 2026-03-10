@@ -49,22 +49,11 @@ import app.aaps.core.interfaces.meal.MealIntentRepository
 import app.aaps.core.interfaces.profile.ProfileFunction
 import app.aaps.plugins.aps.openAPSFCL.vnext.model.BGDataPoint
 import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextStatusFormatter
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsOrchestrator
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.EpisodeTracker
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsEpisodeSummarizer
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsAxisScorer
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsConfidenceAccumulator
 
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.EmptyBgHistoryProvider
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.EmptyInsulinDeliveryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextBgHistoryProvider
 import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextTrends
 
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsBgProviderAdapter
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsInsulinDeliveryProvider
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsLearningStore
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextObsSnapshot
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.StoredLearningState
+
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.MealIntentOverlay
 import com.google.gson.Gson
@@ -100,49 +89,14 @@ class DetermineBasalFCL @Inject constructor(
             profileFunction = profileFunction        // ✅ toevoegen
         )
 
-    private val obsInsulinProvider =
-        FCLvNextObsInsulinDeliveryProvider(
-            cycleMinutes = 5,
-            diaMinutes = 540.0 // pas aan als jij DIA anders wil
-        )
 
-    private val obsLearningStore = FCLvNextObsLearningStore(preferences)
-
-    private val obsOrchestrator: FCLvNextObsOrchestrator =
-        FCLvNextObsOrchestrator(
-            prefs = preferences,
-            episodeTracker = EpisodeTracker(),
-            summarizer = FCLvNextObsEpisodeSummarizer(
-                bgProvider = FCLvNextObsBgProviderAdapter(bgHistoryProvider),
-                insulinProvider = obsInsulinProvider
-            ),
-            axisScorer = FCLvNextObsAxisScorer(),
-            confidenceAccumulator = FCLvNextObsConfidenceAccumulator().also { acc ->
-                obsLearningStore.restore(acc)
-            }
-        )
-
-
-    @Volatile
-    private var lastLearningSnapshot: FCLvNextObsSnapshot? = null
 
 
 
     private val consoleError = mutableListOf<String>()
     private val consoleLog = mutableListOf<String>()
 
-    init {
 
-        obsOrchestrator.attachLearningStore(obsLearningStore)
-    }
-
-    fun getLearningSnapshot(): FCLvNextObsSnapshot? {
-        return try {
-            obsOrchestrator.getCurrentSnapshot()
-        } catch (_: Throwable) {
-            null
-        }
-    }
 
 
     private fun Double.toFixed2(): String = DecimalFormat("0.00#").format(round(this, 2))
@@ -428,18 +382,6 @@ class DetermineBasalFCL @Inject constructor(
 // TODO later: echte detectie van manual bolus vanuit pump events
             val manualBolusDetected = false
 
-            val deliveryCheck = obsInsulinProvider.recordCycle(
-                now = DateTime.now(),
-                commandedU = commandedU,
-                currentIob = currentIOB,
-                phase = "DELIVER"
-            )
-
-// optioneel debug:
-            if (!deliveryCheck.ok) {
-                consoleError.add("[OBS] ⚠ delivery mismatch: ${deliveryCheck.reason}\n")
-            }
-
 
 // 1) Log elke cycle (lichtgewicht)
             fclMetrics.onFiveMinuteTick(
@@ -448,64 +390,8 @@ class DetermineBasalFCL @Inject constructor(
                 target = targetMgdl / 18.0      // mmol/L
             )
 
-            val obsAdviceBundle =
-                try {
-                    obsOrchestrator.onFiveMinuteTick(
-                        now = DateTime.now(),
-                        isNight = isNight,
-
-                        peakActive =
-                            advice.statusText.contains("PeakEstimate=WATCHING") ||
-                                advice.statusText.contains("PeakEstimate=CONFIRMED"),
-
-                        mealSignalActive =
-                            advice.statusText.contains("MealSignal=CONFIRMED") ||
-                                advice.statusText.contains("MealSignal=UNCERTAIN"),
-
-                        prePeakCommitWindow =
-                            advice.statusText.contains("PrePeakCommitWindow=YES"),
-
-                        rescueConfirmed =
-                            advice.statusText.contains("RESCUE") &&
-                                advice.statusText.contains("CONFIRMED"),
-
-                        downtrendLocked =
-                            advice.statusText.contains("DOWNTREND LOCKED"),
-
-                        bgMmol = bgNowMmol,
-                        targetMmol = target_bg/18.0,
-                        currentIob = currentIOB,
-
-                        slope = trendAnalysis?.firstDerivative ?: 0.0,
-                        acceleration = trendAnalysis?.secondDerivative ?: 0.0,
-                        deltaToTarget = bgNowMmol - (target_bg / 18.0),
-                        consistency = trendAnalysis?.consistency ?: 0.0,
-
-                        predictedPeakAtStart = null,
-                        deliveryConfidence = deliveryCheck.confidenceMultiplier,
-
-                        commandedU = commandedU,
-                        maxBolusU = maxBolusU,
-                        manualBolusDetected = manualBolusDetected
-                    )
-                } catch (t: Throwable) {
-                    consoleError.add(
-                        "[OBS] ❌ disabled for this cycle: ${t.javaClass.simpleName}: ${t.message}"
-                    )
-                }
 
 
-
-
-            val snapshot =
-                try {
-                    obsOrchestrator.getCurrentSnapshot()
-                } catch (t: Throwable) {
-                    consoleError.add("[OBS] ❌ snapshot failed: ${t.message}")
-                    null
-                }
-
-            lastLearningSnapshot = snapshot
 
             val statusFormatter =
                 FCLvNextStatusFormatter(
@@ -532,7 +418,7 @@ class DetermineBasalFCL @Inject constructor(
                 activityLog = activity.log,
                 resistanceLog = resistanceLog,
                 metricsText = fclMetrics.getUserStatsString(isNight),
-                learningSnapshot = snapshot
+
             )
 
             // naar console / UI
@@ -547,10 +433,6 @@ class DetermineBasalFCL @Inject constructor(
         }
 
 
-// fun recordCycle
-     fun getLearningSnapshot(): FCLvNextObsSnapshot? {
-        return lastLearningSnapshot
-}
 
         var sens = sensMgdl
 

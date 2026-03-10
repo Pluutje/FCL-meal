@@ -10,7 +10,7 @@ import java.io.File
 import java.util.Locale
 import kotlin.math.min
 import kotlin.math.sqrt
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.LearningMetricsSnapshot
+
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -509,29 +509,6 @@ class FCLMetrics @Inject constructor(
     }
 
 
-
-
-    fun buildLearningSnapshot(isNight: Boolean): LearningMetricsSnapshot? {
-        // Learning wil altijd verse stats (maar throttled)
-        maybeUpdateUserStatsCache(isNight)
-
-        val cache = optimizationController.userStatsCache
-            ?: return null
-
-        return LearningMetricsSnapshot(
-            isNight = isNight,
-            tir24 = cache.metrics24h.timeInRange,
-            tar24 = cache.metrics24h.timeAboveRange,
-            tbr24 = cache.metrics24h.timeBelowRange,
-            tbt24 = cache.metrics24h.timeBelowTarget,
-            tir7d = cache.metrics7d.timeInRange,
-            tar7d = cache.metrics7d.timeAboveRange,
-            tbr7d = cache.metrics7d.timeBelowRange,
-            tbt7d = cache.metrics7d.timeBelowTarget,
-            dataQualityOk = cache.dataQuality24h.hasSufficientData,
-            timestampMillis = cache.lastUpdated.millis
-        )
-    }
 
 
 

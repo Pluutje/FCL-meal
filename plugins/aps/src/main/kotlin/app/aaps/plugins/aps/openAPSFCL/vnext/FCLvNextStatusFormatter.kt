@@ -3,13 +3,11 @@ package app.aaps.plugins.aps.openAPSFCL.vnext
 import org.joda.time.DateTime
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.StringKey
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.*
+
 import app.aaps.core.interfaces.meal.MealIntentRepository
 import app.aaps.core.interfaces.meal.MealIntentType
 import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
-import app.aaps.plugins.aps.openAPSFCL.vnext.ui.BgCurveAnalyzer
-import app.aaps.plugins.aps.openAPSFCL.vnext.ui.BgCurveSnapshot
-import app.aaps.plugins.aps.openAPSFCL.vnext.ui.CurveAnalysisFormatter
+
 
 private const val UI_EPISODES_TO_SHOW = 5
 
@@ -45,6 +43,15 @@ class FCLvNextStatusFormatter(
             "BALANCED"    -> "⚖\uFE0F Gebalanceerd"
             "AGGRESSIVE"   -> "\uD83D\uDE80 Actief"
             "VERY_AGGRESSIVE"  -> "\uD83D\uDD25 Zeer actief"
+            else          -> value
+        }
+    private fun HypoProtectionLabel(value: String): String =
+        when (value) {
+            "MINIMAL" -> "\uD83D\uDFE2 Minimale bescherming"
+            "RELAXED"      -> "\uD83D\uDD35 Licht beschermend"
+            "BALANCED"    -> "⚖\uFE0F Gebalanceerd"
+            "SAFE"   -> "\uD83D\uDFE1 Verhoogde bescherming"
+            "ULTRA_SAFE"  -> "\uD83D\uDD34 Maximale bescherming"
             else          -> value
         }
 
@@ -162,7 +169,7 @@ class FCLvNextStatusFormatter(
      * - toont eerst profiel + learning advice (als aanwezig)
      * - daarna eventueel de rest van statusText (optioneel, compact)
      */
-    private val curveAnalyzer = BgCurveAnalyzer()
+
 
     private fun buildFclBlock(
         advice: FCLvNextAdvice?,
@@ -188,18 +195,6 @@ class FCLvNextStatusFormatter(
             sb.append("• Verandering (5m): ${"%.2f".format(it)} mmol/L\n")
         }
 
-        // ⭐ KERN: Curve analyse via aparte module
-        val snapshot = BgCurveSnapshot(
-            bgNow = ui.bgNow,
-            iob = ui.iob,
-            slope = ui.slopeHr,
-            delta5m = ui.delta5m,
-            acceleration = advice.secondDerivative,
-            predictedPeak = ui.predictedPeak
-        )
-
-        val analysis = curveAnalyzer.analyze(snapshot)
-        sb.append(CurveAnalysisFormatter.formatForStatus(analysis))
 
 // ─────────────────────────────
 // 🔎 FCL core status (belangrijker dan curve)
@@ -240,111 +235,11 @@ class FCLvNextStatusFormatter(
     }
 
 
-
-    private fun humanLearningStatus(status: SnapshotStatus): String =
-        when (status) {
-            SnapshotStatus.INIT ->
-                "⏳ Initialiseren"
-            SnapshotStatus.OBSERVING ->
-                "👀 Observerend"
-            SnapshotStatus.SIGNAL_PRESENT ->
-                "🧠 Lerend"
-        }
-
-
-
-
     private fun minutesBetween(a: DateTime, b: DateTime): Long =
         (b.millis - a.millis) / 60000
 
-    private fun buildDeliveryGateBlock(
-        snapshot: FCLvNextObsSnapshot?
-    ): String {
-
-        val gate = snapshot?.deliveryGateStatus
-            ?: return """
-💉 INSULINE CONTROLE
-─────────────────────
-Nog geen delivery-analyse
-""".trimIndent()
-
-        val status =
-            if (gate.confidence >= 0.9) "🟢 OK"
-            else if (gate.confidence >= 0.6) "🟡 Onzeker"
-            else "🔴 Onbetrouwbaar"
-
-        return """
-💉 INSULINE CONTROLE
-─────────────────────
-• Status      : $status
-• Confidence  : ${"%.2f".format(gate.confidence)}
-${gate.reason?.let { "• Opmerking   : $it" } ?: ""}
-""".trimIndent()
-    }
 
 
-
-    private data class AxisRecommendation(
-        val axis: Axis,
-        val current: String,
-        val recommended: String
-    )
-    private fun buildAxisRecommendation(
-        axis: AxisSnapshot
-    ): AxisRecommendation? {
-
-        if (axis.status == AxisStatus.NO_DIRECTION) return null
-        if (axis.dominantOutcome == null) return null
-        if (axis.dominantConfidence < 0.45) return null
-        if (axis.episodesSeen < 5) return null
-
-        return when (axis.axis) {
-
-            Axis.TIMING -> {
-                val current = prefs.get(StringKey.fcl_vnext_meal_detect_speed)
-
-                val recommended = when (axis.dominantOutcome.name) {
-                    "LATE" -> nextFaster(current)
-                    "EARLY" -> nextSlower(current)
-                    else -> null
-                }
-
-                recommended?.let {
-                    AxisRecommendation(Axis.TIMING, current, it)
-                }
-            }
-
-            Axis.HEIGHT -> {
-                val current = prefs.get(StringKey.fcl_vnext_profile)
-
-                val recommended = when (axis.dominantOutcome.name) {
-                    "TOO_STRONG" -> nextMoreConservative(current)
-                    "TOO_WEAK" -> nextMoreAggressive(current)
-                    else -> null
-                }
-
-                recommended?.let {
-                    AxisRecommendation(Axis.HEIGHT, current, it)
-                }
-            }
-
-            Axis.PERSISTENCE -> {
-                val current = prefs.get(StringKey.fcl_vnext_correction_style)
-
-                val recommended = when (axis.dominantOutcome.name) {
-                    "TOO_SHORT" -> nextMorePersistent(current)
-                    "TOO_LONG" -> nextMoreCautious(current)
-                    else -> null
-                }
-
-                recommended?.let {
-                    AxisRecommendation(Axis.PERSISTENCE, current, it)
-                }
-            }
-
-            else -> null
-        }
-    }
     private fun nextFaster(current: String) = when (current) {
         "VERY_SLOW" -> "SLOW"
         "SLOW" -> "MODERATE"
@@ -394,133 +289,6 @@ ${gate.reason?.let { "• Opmerking   : $it" } ?: ""}
     }
 
 
-    fun buildLearningSnapshotBlock(
-        snapshot: FCLvNextObsSnapshot?
-    ): String {
-
-        if (snapshot == null) {
-            return """
-📚 LEARNING
-─────────────────────
-Nog geen observaties beschikbaar
-""".trimIndent()
-        }
-
-        val sb = StringBuilder()
-
-        sb.append("📚 LEARNING\n")
-        sb.append("─────────────────────\n")
-        sb.append("• Status : ${humanLearningStatus(snapshot.status)}\n")
-        sb.append("• Episodes : ${snapshot.totalEpisodes}\n")
-
-        if (snapshot.activeEpisode && snapshot.activeEpisodeStartedAt != null) {
-            val mins = minutesBetween(snapshot.activeEpisodeStartedAt, snapshot.createdAt)
-            sb.append("• Actieve episode : ${mins} min\n")
-        }
-
-        // ─────────────────────────────
-        // COMPACT ADVIES BLOK
-        // ─────────────────────────────
-
-        val activeSignals = snapshot.axes
-            .filter { it.dominantOutcome != null }
-            .sortedByDescending { it.dominantConfidence }
-
-        if (activeSignals.isNotEmpty()) {
-            sb.append("\n📊 Signaalopbouw\n")
-            sb.append("─────────────────────\n")
-
-            activeSignals.take(3).forEach { axis ->
-                val pct = (axis.dominantConfidence * 100).toInt()
-                val outcome =
-                    axis.dominantOutcome?.name ?: "—"
-
-                sb.append(
-                    "${axis.axis.name.padEnd(12)} : $outcome ($pct%)\n"
-                )
-            }
-        }
-
-
-        val recommendations =
-            snapshot.axes.mapNotNull { buildAxisRecommendation(it) }
-
-        if (recommendations.isNotEmpty()) {
-
-            sb.append("\n📌 ADVIES\n")
-            sb.append("─────────────────────\n")
-
-            recommendations.forEach { rec ->
-
-                val axisSnapshot =
-                    snapshot.axes.firstOrNull { it.axis == rec.axis }
-
-                val confidence =
-                    axisSnapshot?.dominantConfidence ?: 0.0
-
-                val confidencePct = (confidence * 100).toInt()
-
-                val strengthLabel = when {
-                    confidence >= 0.75 -> "🟢 Sterk"
-                    confidence >= 0.60 -> "🟡 Matig"
-                    confidence >= 0.45 -> "🟠 Zwak"
-                    else -> "⚪ Onzeker"
-                }
-
-
-                val outcomeLabel =
-                    when (axisSnapshot?.dominantOutcome?.name) {
-                        "TOO_STRONG" -> "Te sterk"
-                        "TOO_WEAK" -> "Te zwak"
-                        "LATE" -> "Te laat"
-                        "LATE_PEAK_INTERVENTION" -> "Te laat (rond piek)"
-                        "EARLY" -> "Te vroeg"
-                        "TOO_SHORT" -> "Te kort"
-                        "TOO_LONG" -> "Te lang"
-                        else -> axisSnapshot?.dominantOutcome?.name ?: "—"
-                    }
-
-                val currentHuman =
-                    when (rec.axis) {
-                        Axis.HEIGHT ->
-                            profileLabel(rec.current)
-                        Axis.TIMING ->
-                            mealDetectLabel(rec.current)
-                        Axis.PERSISTENCE ->
-                            correctionStyleLabel(rec.current)
-                        else ->
-                            rec.current
-                    }
-
-                val newHuman =
-                    when (rec.axis) {
-                        Axis.HEIGHT ->
-                            profileLabel(rec.recommended)
-                        Axis.TIMING ->
-                            mealDetectLabel(rec.recommended)
-                        Axis.PERSISTENCE ->
-                            correctionStyleLabel(rec.recommended)
-                        else ->
-                            rec.recommended
-                    }
-
-                sb.append(
-                    "${rec.axis.name.padEnd(12)} : " +
-                        "$outcomeLabel ($confidencePct%) " +
-                        "$strengthLabel\n" +
-                        "                 $currentHuman → $newHuman\n"
-                )
-
-            }
-        }
-
-
-        return sb.toString().trimEnd()
-    }
-
-
-
-
 
     fun buildStatus(
         isNight: Boolean,
@@ -532,7 +300,7 @@ Nog geen observaties beschikbaar
         activityLog: String?,
         resistanceLog: String?,
         metricsText: String?,
-        learningSnapshot: FCLvNextObsSnapshot?
+
     ): String {
 
         val coreStatus = """
@@ -582,13 +350,14 @@ ${metricsText ?: "Nog geen data"}
 
         return """
 ════════════════════════
- 🧠 FCL meal V4 v2.0.1
+ 🧠 FCL meal V4 v4.0.1
  
 ════════════════════════
 • Height (sterkte)     : ${profileLabel(prefs.get(StringKey.fcl_vnext_profile))}
 • Timing (reactietijd) : ${mealDetectLabel(prefs.get(StringKey.fcl_vnext_meal_detect_speed))}
 • Maaltijd behandeling : ${mealLabel(prefs.get(StringKey.fcl_vnext_meal_handling_style))}
-• Persistentie        : ${correctionStyleLabel(prefs.get(StringKey.fcl_vnext_correction_style))}
+• Persistentie         : ${correctionStyleLabel(prefs.get(StringKey.fcl_vnext_correction_style))}
+• Hypoprotectie        : ${HypoProtectionLabel(prefs.get(StringKey.fcl_vnext_hypo_protection_style))}
 • Insulineverdeling    : ${doseDistributionLabel(prefs.get(StringKey.fcl_vnext_dose_distribution_style))}
 
 
@@ -601,10 +370,6 @@ $fclCore
 $activityStatus
 
 $resistanceStatus
-
-${buildLearningSnapshotBlock(learningSnapshot)}
-
-${buildDeliveryGateBlock(learningSnapshot)}
 
 $metricsStatus
 """.trimIndent()

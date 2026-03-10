@@ -18,8 +18,10 @@ data class FCLvNextConfig(
     val profielNaam: String,
     val mealDetectSpeed: String,
     val correctionStyle: String,
-    val doseDistributionStyle: String,  // ✅ NEW
     val mealHandlingStyle: String,
+    val hypoProtectionStyle: String,
+    val doseDistributionStyle: String,
+
 
     // smoothing
     val bgSmoothingAlpha: Double,
@@ -158,14 +160,21 @@ data class FCLvNextConfig(
     // Beïnvloedt hoe agressief WATCHING reageert
     // =================================================
 
-
-
 // frontload gedrag (BALANCED defaults)
     val watchingFrontloadFrac: Double,     // fractie van normalDose
     val watchingMinSlope: Double,          // minimale slope voor frontload
     val watchingMinDeltaToTarget: Double,  // minimale overshoot
     val watchingMinPeakRise: Double,       // minimale peakRiseSinceStart
-    val watchingMaxIobRatio: Double        // safety cap
+    val watchingMaxIobRatio: Double,        // safety cap
+
+
+
+// hypo protection tuning knobs (config-driven)
+    val hypoBlockThreshold: Double,     // bv 4.4..4.9
+    val hypoInsulinFrac30: Double,      // impact fractie binnen 30m
+    val hypoInsulinFrac60: Double,
+    val hypoInsulinFrac90: Double
+
 )
 
 fun loadFCLvNextConfig(
@@ -173,11 +182,13 @@ fun loadFCLvNextConfig(
     isNight: Boolean
 ): FCLvNextConfig {
 
-    val profileName =  prefs.get(StringKey.fcl_vnext_profile)
+    val profileName =  prefs.get(StringKey.fcl_vnext_profile)       // height
     val mealDetectSpeed =  prefs.get(StringKey.fcl_vnext_meal_detect_speed)
     val correctionStyle =  prefs.get(StringKey.fcl_vnext_correction_style)
-    val doseDistributionStyle = prefs.get(StringKey.fcl_vnext_dose_distribution_style) // ✅ NEW
     val mealHandlingStyle = prefs.get(StringKey.fcl_vnext_meal_handling_style)
+    val hypoProtectionStyle = prefs.get(StringKey.fcl_vnext_hypo_protection_style)
+    val doseDistributionStyle = prefs.get(StringKey.fcl_vnext_dose_distribution_style)
+
 
     val gain =
         if (isNight) prefs.get(DoubleKey.fcl_vnext_gain_night)
@@ -205,12 +216,20 @@ fun loadFCLvNextConfig(
         profielNaam = profileName,
         mealDetectSpeed = mealDetectSpeed,
         correctionStyle = correctionStyle,
-        doseDistributionStyle = doseDistributionStyle,
         mealHandlingStyle = mealHandlingStyle,
+        hypoProtectionStyle = hypoProtectionStyle,          // ✅ FIX: ontbrak
+        doseDistributionStyle = doseDistributionStyle,
 
-        // =================================================
-        // 🧠 LEARNING BASE (startwaarden)
-        // =================================================
+        // smoothing
+        bgSmoothingAlpha = 0.40,
+
+        // IOB safety
+        iobStart = 0.40,
+        iobMax = 0.75,
+        iobMinFactor = 0.10,
+
+        // commit IOB curve apart
+        commitIobPower = 1.00,
 
         // =================================================
         // 📊 PROFILE — DOSE STRENGTH (default = BALANCED)
@@ -220,7 +239,6 @@ fun loadFCLvNextConfig(
         microDoseMul = 1.00,
 
         // ✅ Distribution base (BALANCED)
-        // (PULSED/SMOOTH schalen dit)
         smallDoseThresholdU = 0.30,
         microCapFracOfMaxSmb = 0.2,
         smallCapFracOfMaxSmb = 0.4,
@@ -234,28 +252,12 @@ fun loadFCLvNextConfig(
         confirmMinFraction = 0.70,
         confirmMaxFraction = 1.00,
 
-        // =================================================
-        // 🛡️ CONSTANTEN / LOGICA
-        // =================================================
-
-        // smoothing
-        bgSmoothingAlpha = 0.40,
-
         // betrouwbaarheid
         minConsistency = 0.18,
         consistencyExp = 1.00,
         episodeMinConsistency = 0.45,
 
-        // IOB safety
-        iobStart = 0.40,
-        iobMax = 0.75,
-        iobMinFactor = 0.10,
-
-        // commit / execution
-        commitIobPower = 1.00,
-        minCommitDose = 0.30,
-        commitCooldownMinutes = 15,
-
+        // execution
         deliveryCycleMinutes = 5,
         maxTempBasalRate = 15.0,
 
@@ -268,25 +270,27 @@ fun loadFCLvNextConfig(
         mealDeltaSpan = 1.0,
         mealUncertainConfidence = 0.30,
         mealConfirmConfidence = 0.60,
+        mealConfidenceSpeedMul = 1.25,
 
         mealDetectThresholdMul = 1.0,
         microRampThresholdMul = 1.0,
-        mealConfidenceSpeedMul = 1.25,
 
+        // commit logic
+        commitCooldownMinutes = 15,
+        minCommitDose = 0.30,
 
-
-        // micro-hold
-        correctionHoldSlopeMax = -0.28,     // was -0.25
-        correctionHoldAccelMax = 0.035,     // was 0.04
-        correctionHoldDeltaMax = 1.85,      // was 1.7
-        smallCorrectionMaxU = 0.28,         // was 0.25
-        smallCorrectionCooldownMinutes = 10, // was 12
+        // micro-correction hold + anti-drip
+        correctionHoldSlopeMax = -0.28,
+        correctionHoldAccelMax = 0.035,
+        correctionHoldDeltaMax = 1.85,
+        smallCorrectionMaxU = 0.28,
+        smallCorrectionCooldownMinutes = 10,
 
         // absorption / peak
         absorptionWindowMinutes = 60,
-        absorptionDoseFactor = 0.15,
         peakSlopeThreshold = 0.3,
         peakAccelThreshold = -0.05,
+        absorptionDoseFactor = 0.15,
 
         // re-entry
         reentryMinMinutesSinceCommit = 25,
@@ -301,11 +305,11 @@ fun loadFCLvNextConfig(
         stagnationSlopeMaxPos = 0.25,
         stagnationAccelMaxAbs = 0.06,
         stagnationEnergyBoost = 0.12,
-        persistentAggressionMul = 1.08,     // was 1.0
-        // persistent plateau detectie (defaults)
-        persistentSlopeAbs = 0.32,          // was 0.30
-        persistentAccelAbs = 0.085,         // was 0.08
+        persistentAggressionMul = 1.08,
+        persistentSlopeAbs = 0.32,
+        persistentAccelAbs = 0.085,
 
+        // early-dose & fast-carb behavior
         earlyPeakEscalationBonus = 0.10,
         earlyStage1ThresholdMul = 1.00,
         enableFastCarbOverride = true,
@@ -328,16 +332,21 @@ fun loadFCLvNextConfig(
         peakUseMaxAccelFrac = 0.5,
         peakPredictionMaxMmol = 25.0,
 
+        // trend persistence
         trendConfirmCycles = 2,
 
+        // watching/frontload
+        watchingFrontloadFrac = 0.65,
+        watchingMinSlope = 0.30,
+        watchingMinDeltaToTarget = 2.0,
+        watchingMinPeakRise = 0.6,
+        watchingMaxIobRatio = 0.75,
 
-        watchingFrontloadFrac = 0.65,     // was 0.55
-        watchingMinSlope = 0.30,           // was 0.35
-        watchingMinDeltaToTarget = 2.0,    // was 2.5
-        watchingMinPeakRise = 0.6,         // was 0.8
-        watchingMaxIobRatio = 0.75,        // onveranderd
-
-
+        // ✅ FIX: hypo protection defaults (BALANCED)
+        hypoBlockThreshold = 4.60,
+        hypoInsulinFrac30 = 0.25,
+        hypoInsulinFrac60 = 0.55,
+        hypoInsulinFrac90 = 0.80
     )
 
     return base
@@ -347,6 +356,7 @@ fun loadFCLvNextConfig(
         .let { applyDoseDistributionStyle(it) }
         .let { applyMealHandlingStyle(it) }
         .let { applyMealHandlingGainScaling(it) } // 👈 nieuw
+        .let { applyHypoProtectionStyle(it) }
 }
 
 private fun applyProfileDoseStrength(
@@ -565,6 +575,43 @@ private fun applyMealHandlingGainScaling(
     )
 }
 
+private fun applyHypoProtectionStyle(
+    cfg: FCLvNextConfig
+): FCLvNextConfig {
+
+    return when (cfg.hypoProtectionStyle) {
+
+        "MINIMAL" -> cfg.copy(
+            hypoBlockThreshold = (cfg.hypoBlockThreshold - 0.25).coerceIn(4.2, 5.2),
+            hypoInsulinFrac30 = (cfg.hypoInsulinFrac30 * 0.80).coerceIn(0.10, 0.40),
+            hypoInsulinFrac60 = (cfg.hypoInsulinFrac60 * 0.85).coerceIn(0.30, 0.80),
+            hypoInsulinFrac90 = (cfg.hypoInsulinFrac90 * 0.88).coerceIn(0.50, 0.95)
+        )
+
+        "RELAXED" -> cfg.copy(
+            hypoBlockThreshold = (cfg.hypoBlockThreshold - 0.12).coerceIn(4.2, 5.2),
+            hypoInsulinFrac30 = (cfg.hypoInsulinFrac30 * 0.92).coerceIn(0.10, 0.40),
+            hypoInsulinFrac60 = (cfg.hypoInsulinFrac60 * 0.94).coerceIn(0.30, 0.80),
+            hypoInsulinFrac90 = (cfg.hypoInsulinFrac90 * 0.95).coerceIn(0.50, 0.95)
+        )
+
+        "SAFE" -> cfg.copy(
+            hypoBlockThreshold = (cfg.hypoBlockThreshold + 0.10).coerceIn(4.2, 5.2),
+            hypoInsulinFrac30 = (cfg.hypoInsulinFrac30 * 1.08).coerceIn(0.10, 0.40),
+            hypoInsulinFrac60 = (cfg.hypoInsulinFrac60 * 1.07).coerceIn(0.30, 0.90),
+            hypoInsulinFrac90 = (cfg.hypoInsulinFrac90 * 1.05).coerceIn(0.50, 0.98)
+        )
+
+        "ULTRA_SAFE" -> cfg.copy(
+            hypoBlockThreshold = (cfg.hypoBlockThreshold + 0.22).coerceIn(4.2, 5.2),
+            hypoInsulinFrac30 = (cfg.hypoInsulinFrac30 * 1.18).coerceIn(0.10, 0.45),
+            hypoInsulinFrac60 = (cfg.hypoInsulinFrac60 * 1.15).coerceIn(0.30, 0.95),
+            hypoInsulinFrac90 = (cfg.hypoInsulinFrac90 * 1.10).coerceIn(0.50, 0.99)
+        )
+
+        else -> cfg // BALANCED = baseline uit base()
+    }
+}
 
 // ─────────────────────────────────────────────
 // 4) ✅ Dose distribution style (SMOOTH / BALANCED / PULSED)

@@ -273,6 +273,7 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
         binding.buttonsLayout.quickWizardButton.setOnLongClickListener(this)
         binding.infoLayout.apsMode.setOnClickListener(this)
         binding.infoLayout.apsMode.setOnLongClickListener(this)
+        binding.buttonsLayout.analyzerButton.setOnClickListener(this)
     }
 
     override fun onPause() {
@@ -467,6 +468,10 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
                     }
                 )    //abstract fun contributeInsulinDialog(): InsulinDialog
 
+                R.id.analyzer_button -> {
+                    openAnalyzerApp()
+                }
+
                 R.id.temp_target         -> protectionCheck.queryProtection(
                     activity,
                     ProtectionCheck.Protection.BOLUS,
@@ -540,6 +545,24 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
                 it.startActivity(intent)
             } catch (_: ActivityNotFoundException) {
                 aapsLogger.debug(LTag.CORE, "Error opening CGM app")
+            }
+        }
+    }
+
+    private fun openAnalyzerApp() {
+        val packageName = "com.example.fclanalyzer"
+
+        context?.let {
+            val pm = it.packageManager
+            try {
+                val intent = pm.getLaunchIntentForPackage(packageName)
+                    ?: throw ActivityNotFoundException()
+
+                intent.addCategory(Intent.CATEGORY_LAUNCHER)
+                it.startActivity(intent)
+
+            } catch (_: ActivityNotFoundException) {
+                aapsLogger.debug(LTag.CORE, "Analyzer app not installed")
             }
         }
     }
@@ -1027,7 +1050,8 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
 
         val TIR_24h_4_10 = tirCalculator.averageTIR(tirCalculator.calculateXHour(24,70.0, 180.0))?.inRangePct()!!.roundToInt()
         val TIR_5d_4_10 = (tirCalculator.averageTIR(tirCalculator.calculate(5,70.0, 180.0))?.inRangePct()!!).roundToInt()
-        var cobText =  " " + TIR_24h_4_10.toString() + "%" + "  -  " + TIR_5d_4_10.toString() + "%"
+        val TIR_7d_4_10 = (tirCalculator.averageTIR(tirCalculator.calculate(7,70.0, 180.0))?.inRangePct()!!).roundToInt()
+        var cobText =  " " + TIR_24h_4_10.toString() + "%" + "  -  " + TIR_7d_4_10.toString() + "%"
 
         val iobText = iobText()
         val iobDialogText = iobDialogText()
@@ -1319,12 +1343,12 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
                 activity?.let { activity ->
 
                     val plugin = activePlugin.activeAPS as? OpenAPSFCLPlugin
-                    val snapshot = plugin?.getLearningSnapshot()
+                 //   val snapshot = plugin?.getLearningSnapshot()
 
-                    if (snapshot == null) {
-                        OKDialog.show(activity, "🧠 FCL Learning", "Nog geen learning data beschikbaar.")
-                        return@let
-                    }
+                //    if (snapshot == null) {
+               //         OKDialog.show(activity, "🧠 FCL Learning", "Nog geen learning data beschikbaar.")
+                //        return@let
+                //    }
 
                     val formatter = FCLvNextStatusFormatter(
                         prefs = preferences,
@@ -1332,9 +1356,9 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
                         preBolusController = PreBolusController()
                     )
 
-                    val text = formatter.buildLearningSnapshotBlock(snapshot)
+                //    val text = formatter.buildLearningSnapshotBlock(snapshot)
 
-                    OKDialog.show(activity, "🧠 FCL Learning", text)
+                    OKDialog.show(activity, "🧠 FCL Learning", "Learning in externe app")
                 }
             }
 

@@ -326,7 +326,7 @@
             android:paddingBottom="-1dp"
             android:rotation="0"
             android:rotationX="0"
-            android:text=" 24u   -    5d "
+            android:text=" 24u   -    7d "
             android:textAppearance="@style/TextAppearance.AppCompat.Medium"
             android:textColor="#4F784F"
             android:textSize="12sp"
