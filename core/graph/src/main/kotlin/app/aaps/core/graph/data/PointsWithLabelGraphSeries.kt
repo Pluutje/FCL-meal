@@ -15,6 +15,7 @@ import com.jjoe64.graphview.series.BaseSeries
 import kotlin.math.min
 import androidx.core.graphics.withSave
 import androidx.core.graphics.withRotation
+import app.aaps.core.graph.meal.MealIntentDataPoint
 
 /**
  * Series that plots the data as points.
@@ -85,7 +86,10 @@ open class PointsWithLabelGraphSeries<E : DataPointWithLabelInterface> : BaseSer
             minY = graphView.viewport.getMinY(false)
         }
         val values = getValues(minX, maxX)
-
+        val mealPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            isDither = true
+        }
         // draw background
         // draw data
         val diffY = maxY - minY
@@ -104,6 +108,8 @@ open class PointsWithLabelGraphSeries<E : DataPointWithLabelInterface> : BaseSer
             val valX = value.x - minX
             val ratX = valX / diffX
             var x = graphWidth * ratX
+
+
 
             // overdraw
             var overdraw = x > graphWidth
@@ -269,7 +275,41 @@ open class PointsWithLabelGraphSeries<E : DataPointWithLabelInterface> : BaseSer
                         mPaint.strokeWidth = 5f
                         canvas.drawRect(endX - 3, bounds.top + py - 3, xPlusLength + 3, bounds.bottom + py + 3, mPaint)
                     }
+                } else if (value.shape == Shape.MEAL_INTENT && value is MealIntentDataPoint) {
+
+                    val top = graphTop
+                    val bottom = graphTop + value.bandHeightPx
+
+                    val startRatio = (value.startX - minX) / diffX
+                    val endRatio = (value.endX - minX) / diffX
+
+                    val left = graphLeft + (graphWidth * startRatio).toFloat()
+                    val right = graphLeft + (graphWidth * endRatio).toFloat()
+
+                    // 1️⃣ Balk tekenen (met decay alpha)
+                    mealPaint.color = value.style.backgroundColor
+                    mealPaint.alpha = value.style.alpha
+                    mealPaint.shader = null
+                    mealPaint.xfermode = null
+
+                    canvas.drawRect(left, top, right, bottom, mealPaint)
+
+                    // 2️⃣ Tekst tekenen (met dezelfde alpha!)
+                    if (value.label.isNotEmpty()) {
+
+                        mPaint.color = value.style.textColor
+                        mPaint.alpha = value.style.alpha   // 🔑 behoud decay transparantie
+                        mPaint.textSize = value.bandHeightPx * 0.5f
+                        mPaint.isFakeBoldText = true
+                        mPaint.textAlign = Paint.Align.CENTER
+
+                        val centerX = (left + right) / 2f
+                        val textY = top + value.bandHeightPx * 0.65f
+
+                        canvas.drawText(value.label, centerX, textY, mPaint)
+                    }
                 }
+
                 // set values above point
             }
         }

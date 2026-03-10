@@ -44,6 +44,7 @@ class UserEntryPresentationHelperImpl @Inject constructor(
     override fun iconId(source: Sources): Int = when (source) {
         Sources.TreatmentDialog     -> R.drawable.icon_insulin_carbs
         Sources.InsulinDialog       -> R.drawable.ic_bolus
+        Sources.MealIntentDialog    -> R.drawable.ic_meal
         Sources.CarbDialog          -> R.drawable.ic_cp_bolus_carbs
         Sources.WizardDialog        -> R.drawable.ic_calculator
         Sources.QuickWizard         -> R.drawable.ic_quick_wizard
@@ -110,7 +111,7 @@ class UserEntryPresentationHelperImpl @Inject constructor(
         Sources.SMS                 -> R.drawable.ic_sms
         Sources.Treatments          -> R.drawable.ic_treatments
         Sources.Wear                -> R.drawable.ic_watch
-        Sources.Food                -> R.drawable.ic_food
+        Sources.Food                -> R.drawable.ic_meal
         Sources.Stats               -> R.drawable.ic_cp_stats
         Sources.ConfigBuilder       -> app.aaps.core.ui.R.drawable.ic_cogs
         Sources.Overview            -> app.aaps.core.ui.R.drawable.ic_home

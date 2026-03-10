@@ -58,4 +58,29 @@ enum class StringKey(
 
     PumpCommonBolusStorage("pump_sync_storage_bolus", ""),
     PumpCommonTbrStorage("pump_sync_storage_tbr", ""),
+
+    // eigen
+    OchtendStart(key = "OchtendStart", "06:30"),
+    OchtendStartWeekend(key = "OchtendStartWeekend", "08:00"),
+    NachtStart(key = "NachtStart", "23:30"),
+    WeekendDagen(key = "WeekendDagen", "za,zo"),
+
+    fcl_vnext_activity_behavior("fcl_vnext_activity_behavior", "NORMAL"),
+
+    fcl_vnext_profile(key = "fcl_vnext_profile", "BALANCED"),
+    fcl_vnext_meal_detect_speed(key = "fcl_vnext_meal_detect_speed", "MODERATE"),
+    fcl_vnext_meal_handling_style(key = "fcl_vnext_meal_handling_style", defaultValue = "BALANCED"),
+    fcl_vnext_correction_style(key = "fcl_vnext_correction_style", "NORMAL"),
+    fcl_vnext_hypo_protection_style(key = "fcl_vnext_hypo_protection_style", "BALANCED"),
+    fcl_vnext_dose_distribution_style(key = "fcl_vnext_dose_distribution_style", "BALANCED"),
+
+    fcl_vnext_resistance_behavior("fcl_vnext_resistance_behavior", "NORMAL"),
+    fcl_vnext_resistance_stability("fcl_vnext_resistance_stability", "STANDARD"),
+
+    fcl_vnext_obs_learning_state(key = "fcl_vnext_obs_learning_state", ""),
+
+    fcl_vnext_learning_parameters_json(key = "fcl_vnext_learning_parameters_json", ""),
+
+    fcl_vnext_obs_debug(key = "fcl_vnext_obs_debug", ""),
+
 }

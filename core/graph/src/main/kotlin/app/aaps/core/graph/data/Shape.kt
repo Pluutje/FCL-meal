@@ -28,5 +28,6 @@ enum class Shape {
     IOB_PREDICTION,
     BUCKETED_BG,
     HEART_RATE,
-    STEPS
+    STEPS,
+    MEAL_INTENT
 }

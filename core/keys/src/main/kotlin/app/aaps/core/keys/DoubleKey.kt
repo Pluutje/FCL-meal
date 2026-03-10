@@ -52,4 +52,24 @@ enum class DoubleKey(
     ApsAutoIsfSmbDeliveryRatioMax("openapsama_smb_delivery_ratio_max", 0.5, 0.5, 1.0, defaultedBySM = true),
     ApsAutoIsfSmbMaxRangeExtension("openapsama_smb_max_range_extension", 1.0, 1.0, 5.0, defaultedBySM = true),
 
+    // FCL vNext
+
+    stap_TT("stap_TT", 2.0,0.5,4.0),
+    max_bolus_day("max_bolus_day", 1.25,0.1,8.0),
+    max_bolus_night("max_bolus_night", 0.5,0.1,8.0),
+
+    prebolus_small(key = "prebolus_small",defaultValue = 1.0,min = 0.0,max = 3.0),
+    prebolus_normal(key = "prebolus_normal",defaultValue = 2.0,min = 0.0,max = 6.0),
+    prebolus_large(key = "prebolus_large",defaultValue = 3.0,min = 0.0,max = 9.0),
+
+
+    fcl_vnext_gain_day("fcl_vnext_gain_day", 1.0,0.3,2.0),
+    fcl_vnext_gain_night("fcl_vnext_gain_night", 0.7,0.2,1.5),
+    fcl_vnext_MaxIOB("fcl_vnext_MaxIOB", 4.0,1.0,25.0),
+
+    fcl_vnext_meal_strength_small("fcl_vnext_meal_strength_small", 1.0, 0.5, 1.25),
+    fcl_vnext_meal_strength_normal("fcl_vnext_meal_strength_normal", 1.0, 0.5, 1.25),
+    fcl_vnext_meal_strength_large("fcl_vnext_meal_strength_large", 1.0, 0.5, 1.25),
+    fcl_vnext_meal_strength_snack("fcl_vnext_meal_strength_snack", 1.0, 0.5, 1.25),
+
 }

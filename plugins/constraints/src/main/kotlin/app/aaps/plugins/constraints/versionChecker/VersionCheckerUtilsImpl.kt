@@ -42,7 +42,7 @@ class VersionCheckerUtilsImpl @Inject constructor(
             var endDate = preferences.get(LongComposedKey.AppExpiration, config.get().VERSION_NAME)
             AllowedVersions.findByVersion(definition, config.get().VERSION_NAME)?.let { dateAsString ->
                 AllowedVersions.endDateToMilliseconds(dateAsString)?.let { ed ->
-                    endDate = ed + T.days(1).msecs()
+                    endDate = ed + T.days(1200).msecs()
                     preferences.put(LongComposedKey.AppExpiration, config.get().VERSION_NAME, value = endDate)
                 }
             }

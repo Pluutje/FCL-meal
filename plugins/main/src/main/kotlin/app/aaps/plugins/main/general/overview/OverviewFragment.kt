@@ -42,6 +42,8 @@ import app.aaps.core.interfaces.iob.IobCobCalculator
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
 import app.aaps.core.interfaces.logging.UserEntryLogger
+import app.aaps.core.interfaces.meal.MealIntentRepository
+import app.aaps.core.interfaces.meal.MealIntentType
 import app.aaps.core.interfaces.nsclient.NSSettingsStatus
 import app.aaps.core.interfaces.nsclient.ProcessedDeviceStatusData
 import app.aaps.core.interfaces.overview.LastBgData
@@ -81,6 +83,7 @@ import app.aaps.core.interfaces.rx.events.EventWearUpdateTiles
 import app.aaps.core.interfaces.rx.weardata.EventData
 import app.aaps.core.interfaces.source.DexcomBoyda
 import app.aaps.core.interfaces.source.XDripSource
+import app.aaps.core.interfaces.stats.TirCalculator
 import app.aaps.core.interfaces.ui.UiInteraction
 import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.core.interfaces.utils.DecimalFormatter
@@ -115,12 +118,18 @@ import com.jjoe64.graphview.GraphView
 import dagger.android.support.DaggerFragment
 import io.reactivex.rxjava3.disposables.CompositeDisposable
 import io.reactivex.rxjava3.kotlin.plusAssign
+import org.joda.time.DateTime
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Provider
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.roundToInt
+import app.aaps.plugins.aps.openAPSFCL.vnext.meal.PreBolusController
+import app.aaps.plugins.aps.openAPSFCL.FCLMetrics
+import app.aaps.plugins.aps.openAPSFCL.OpenAPSFCLPlugin
+import app.aaps.plugins.aps.openAPSFCL.vnext.FCLvNextStatusFormatter
 
 class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickListener {
 
@@ -161,6 +170,9 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
     @Inject lateinit var decimalFormatter: DecimalFormatter
     @Inject lateinit var graphDataProvider: Provider<GraphData>
     @Inject lateinit var commandQueue: CommandQueue
+    @Inject lateinit var tirCalculator: TirCalculator
+    @Inject lateinit var preBolusController: PreBolusController
+    @Inject lateinit var fclMetrics: FCLMetrics
 
     private val disposable = CompositeDisposable()
 
@@ -252,6 +264,7 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
         binding.buttonsLayout.acceptTempButton.setOnClickListener(this)
         binding.buttonsLayout.treatmentButton.setOnClickListener(this)
         binding.buttonsLayout.wizardButton.setOnClickListener(this)
+        binding.buttonsLayout.mealIntentButton.setOnClickListener(this)
         binding.buttonsLayout.calibrationButton.setOnClickListener(this)
         binding.buttonsLayout.cgmButton.setOnClickListener(this)
         binding.buttonsLayout.insulinButton.setOnClickListener(this)
@@ -260,6 +273,7 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
         binding.buttonsLayout.quickWizardButton.setOnLongClickListener(this)
         binding.infoLayout.apsMode.setOnClickListener(this)
         binding.infoLayout.apsMode.setOnLongClickListener(this)
+        binding.buttonsLayout.analyzerButton.setOnClickListener(this)
     }
 
     override fun onPause() {
@@ -427,6 +441,8 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
                     ProtectionCheck.Protection.BOLUS,
                     UIRunnable { if (isAdded) uiInteraction.runTreatmentDialog(childFragmentManager) })
 
+
+
                 R.id.wizard_button       -> protectionCheck.queryProtection(
                     activity,
                     ProtectionCheck.Protection.BOLUS,
@@ -442,6 +458,19 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
                     activity,
                     ProtectionCheck.Protection.BOLUS,
                     UIRunnable { if (isAdded) uiInteraction.runCarbsDialog(childFragmentManager) })
+
+                R.id.meal_intent_button -> protectionCheck.queryProtection(
+                    activity,
+                    ProtectionCheck.Protection.BOLUS,
+                    UIRunnable {
+                        if (isAdded)
+                            uiInteraction.runMealIntentDialog(childFragmentManager)
+                    }
+                )    //abstract fun contributeInsulinDialog(): InsulinDialog
+
+                R.id.analyzer_button -> {
+                    openAnalyzerApp()
+                }
 
                 R.id.temp_target         -> protectionCheck.queryProtection(
                     activity,
@@ -516,6 +545,24 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
                 it.startActivity(intent)
             } catch (_: ActivityNotFoundException) {
                 aapsLogger.debug(LTag.CORE, "Error opening CGM app")
+            }
+        }
+    }
+
+    private fun openAnalyzerApp() {
+        val packageName = "com.example.fclanalyzer"
+
+        context?.let {
+            val pm = it.packageManager
+            try {
+                val intent = pm.getLaunchIntentForPackage(packageName)
+                    ?: throw ActivityNotFoundException()
+
+                intent.addCategory(Intent.CATEGORY_LAUNCHER)
+                it.startActivity(intent)
+
+            } catch (_: ActivityNotFoundException) {
+                aapsLogger.debug(LTag.CORE, "Analyzer app not installed")
             }
         }
     }
@@ -612,6 +659,14 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
             // **** Various treatment buttons ****
             binding.buttonsLayout.carbsButton.visibility =
                 (profile != null && preferences.get(BooleanKey.OverviewShowCarbsButton)).toVisibility()
+
+            val isFclVNext = activePlugin.activeAPS.javaClass.simpleName.contains("FCL")
+            binding.buttonsLayout.mealIntentButton.visibility =
+                (profile != null && preferences.get(BooleanKey.ShowMealIntentButton) && isFclVNext).toVisibility()
+
+           // binding.buttonsLayout.mealIntentButton.visibility =    insulin_button
+           //     (profile != null && preferences.get(BooleanKey.ShowMealIntentButton)).toVisibility()
+
             binding.buttonsLayout.treatmentButton.visibility = (loop.runningMode != RM.Mode.DISCONNECTED_PUMP && !pump.isSuspended() && pump.isInitialized() && profile != null
                 && preferences.get(BooleanKey.OverviewShowTreatmentButton)).toVisibility()
             binding.buttonsLayout.wizardButton.visibility = (loop.runningMode != RM.Mode.DISCONNECTED_PUMP && !pump.isSuspended() && pump.isInitialized() && profile != null
@@ -992,33 +1047,34 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
             rh.gs(app.aaps.core.ui.R.string.basal) + ": " + rh.gs(app.aaps.core.ui.R.string.format_insulin_units, basalIob().basaliob)
 
     private fun updateIobCob() {
+
+        val TIR_24h_4_10 = tirCalculator.averageTIR(tirCalculator.calculateXHour(24,70.0, 180.0))?.inRangePct()!!.roundToInt()
+        val TIR_5d_4_10 = (tirCalculator.averageTIR(tirCalculator.calculate(5,70.0, 180.0))?.inRangePct()!!).roundToInt()
+        val TIR_7d_4_10 = (tirCalculator.averageTIR(tirCalculator.calculate(7,70.0, 180.0))?.inRangePct()!!).roundToInt()
+        var cobText =  " " + TIR_24h_4_10.toString() + "%" + "  -  " + TIR_7d_4_10.toString() + "%"
+
         val iobText = iobText()
         val iobDialogText = iobDialogText()
-        val displayText = iobCobCalculator.getCobInfo("Overview COB").displayText(rh, decimalFormatter)
-        val lastCarbsTime = persistenceLayer.getNewestCarbs()?.timestamp ?: 0L
+
         runOnUiThread {
             _binding ?: return@runOnUiThread
             binding.infoLayout.iob.text = iobText
             binding.infoLayout.iobLayout.setOnClickListener { activity?.let { OKDialog.show(it, rh.gs(app.aaps.core.ui.R.string.iob), iobDialogText) } }
-            // cob
-            var cobText = displayText ?: rh.gs(app.aaps.core.ui.R.string.value_unavailable_short)
 
-            val constraintsProcessed = loop.lastRun?.constraintsProcessed
-            val lastRun = loop.lastRun
-            if (config.APS && constraintsProcessed != null && lastRun != null) {
-                if (constraintsProcessed.carbsReq > 0) {
-                    //only display carbsreq when carbs have not been entered recently
-                    if (lastCarbsTime < lastRun.lastAPSRun) {
-                        cobText += "\n" + constraintsProcessed.carbsReq + " " + rh.gs(app.aaps.core.ui.R.string.required)
-                    }
-                    if (carbAnimation?.isRunning == false)
-                        carbAnimation?.start()
-                } else {
-                    carbAnimation?.stop()
-                    carbAnimation?.selectDrawable(0)
+            binding.infoLayout.cob.text = cobText
+            binding.infoLayout.cobLayout.setOnClickListener {
+                activity?.let { activity ->
+                    val isNight = false
+                    val stats = fclMetrics.getUserStatsString(isNight)
+
+                    OKDialog.show(
+                        activity,
+                        "📊 Glucose statistieken",
+                        stats
+                    )
                 }
             }
-            binding.infoLayout.cob.text = cobText
+
         }
     }
 
@@ -1102,6 +1158,46 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
         graphData.setNumVerticalLabels()
         graphData.formatAxis(overviewData.fromTime, overviewData.endTime)
 
+
+
+
+      //  val snapshot = preBolusController.uiSnapshot(DateTime.now())
+        val snapshot = MealIntentRepository.getPreBolusSnapshot()
+
+        val decayFactor = snapshot?.decayFactor ?: 0.0
+        MealIntentRepository.get()?.let { mealIntent ->
+            val popupText =
+                if (snapshot != null) {
+                    buildString {
+
+                        append("Afgegeven: ${"%.2f".format(snapshot.deliveredU)} U\n")
+                        append("Resterend: ${"%.2f".format(snapshot.remainingU)} U\n")
+                        append("Looptijd: nog ${snapshot.minutesRemaining} min\n")
+                        append("Decay: ${"%.2f".format(snapshot.decayFactor)}")
+
+                    }
+                } else {
+                    "${mealIntent.type.uiDescription().trim()}\n" +
+                        "Geldig tot: ${DateTime(mealIntent.validUntil).toString("HH:mm")}"
+                }
+
+
+            graphData.addMealIntent(
+                requireContext(),
+                GraphData.MealIntentVisual(
+                    startTime = mealIntent.timestamp,
+                    endTime = mealIntent.validUntil,
+                    label = mealIntent.type.bandLabel(),
+                    popupText = popupText
+                ),
+                decayFactor = decayFactor,
+                type = mealIntent.type
+            )
+        }
+
+
+
+
         graphData.performUpdate()
 
         // 2nd graphs
@@ -1171,6 +1267,7 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
                 ).toVisibility()
             secondaryGraphsData[g].performUpdate()
         }
+
     }
 
     private fun updateCalcProgress() {
@@ -1213,24 +1310,23 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
         val profile = profileFunction.getProfile()
         val request = loop.lastRun?.request
         val isfMgdl = profile?.getProfileIsfMgdl()
-        val isfForCarbs = profile?.getIsfMgdlForCarbs(dateUtil.now(), "Overview", config, processedDeviceStatusData)
+      //  val isfForCarbs = profile?.getIsfMgdlForCarbs(dateUtil.now(), "Overview", config, processedDeviceStatusData)
         val variableSens =
             if (config.APS) request?.variableSens ?: 0.0
             else if (config.AAPSCLIENT) processedDeviceStatusData.getAPSResult()?.variableSens ?: 0.0
             else 0.0
-        val ratioUsed = request?.autosensResult?.ratio ?: 1.0
+        var ratioUsed = request?.autosensResult?.ratio ?: 1.0
+        if (isfMgdl != null) {
+            ratioUsed = (isfMgdl / variableSens) * 100
+        }
 
-        if (variableSens != isfMgdl && variableSens != 0.0 && isfMgdl != null) {
+        if (variableSens != 0.0 && isfMgdl != null) {
+
             val okDialogText: ArrayList<String> = ArrayList()
             val overViewText: ArrayList<String> = ArrayList()
-            val autoSensHiddenRange = 0.0             //Hide Autosens value if equals 100%
-            val autoSensMax = 100.0 + (preferences.get(DoubleKey.AutosensMax) - 1.0) * autoSensHiddenRange * 100.0
-            val autoSensMin = 100.0 + (preferences.get(DoubleKey.AutosensMin) - 1.0) * autoSensHiddenRange * 100.0
-            lastAutosensRatio?.let {
-                if (it < autoSensMin || it > autoSensMax)
-                    overViewText.add(rh.gs(app.aaps.core.ui.R.string.autosens_short, it))
-                okDialogText.add(rh.gs(app.aaps.core.ui.R.string.autosens_long, it))
-            }
+
+            overViewText.add(rh.gs(app.aaps.core.ui.R.string.autosens_short, ratioUsed))
+            okDialogText.add(rh.gs(app.aaps.core.ui.R.string.autosens_long, ratioUsed))
             overViewText.add(
                 String.format(
                     Locale.getDefault(), "%1$.1f→%2$.1f",
@@ -1241,24 +1337,32 @@ class OverviewFragment : DaggerFragment(), View.OnClickListener, OnLongClickList
             binding.infoLayout.sensitivity.text = overViewText.joinToString("\n")
             binding.infoLayout.sensitivity.visibility = View.VISIBLE
             binding.infoLayout.variableSensitivity.visibility = View.GONE
-            if (ratioUsed != 1.0 && ratioUsed != lastAutosensData?.autosensResult?.ratio)
-                okDialogText.add(rh.gs(app.aaps.core.ui.R.string.algorithm_long, ratioUsed * 100))
-            okDialogText.add(rh.gs(app.aaps.core.ui.R.string.isf_for_carbs, profileUtil.fromMgdlToUnits(isfForCarbs ?: 0.0, profileFunction.getUnits())))
-            if (config.APS) {
-                val aps = activePlugin.activeAPS
-                aps.getSensitivityOverviewString()?.let {
-                    okDialogText.add(it)
+
+            binding.infoLayout.asLayout.setOnClickListener {
+
+                activity?.let { activity ->
+
+                    val plugin = activePlugin.activeAPS as? OpenAPSFCLPlugin
+                 //   val snapshot = plugin?.getLearningSnapshot()
+
+                //    if (snapshot == null) {
+               //         OKDialog.show(activity, "🧠 FCL Learning", "Nog geen learning data beschikbaar.")
+                //        return@let
+                //    }
+
+                    val formatter = FCLvNextStatusFormatter(
+                        prefs = preferences,
+                        mealIntentRepository = MealIntentRepository,
+                        preBolusController = PreBolusController()
+                    )
+
+                //    val text = formatter.buildLearningSnapshotBlock(snapshot)
+
+                    OKDialog.show(activity, "🧠 FCL Learning", "Learning in externe app")
                 }
             }
-            binding.infoLayout.asLayout.setOnClickListener { activity?.let { OKDialog.show(it, rh.gs(app.aaps.core.ui.R.string.sensitivity), okDialogText.joinToString("\n")) } }
 
-        } else {
-            binding.infoLayout.sensitivity.text =
-                lastAutosensData?.let {
-                    rh.gs(app.aaps.core.ui.R.string.autosens_short, it.autosensResult.ratio * 100)
-                } ?: ""
-            binding.infoLayout.variableSensitivity.visibility = View.GONE
-            binding.infoLayout.sensitivity.visibility = View.VISIBLE
+
         }
     }
 

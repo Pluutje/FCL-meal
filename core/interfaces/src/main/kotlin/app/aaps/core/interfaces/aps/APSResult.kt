@@ -47,6 +47,7 @@ interface APSResult {
     var currentTemp: CurrentTemp?
     var oapsProfile: OapsProfile?
     var oapsProfileAutoIsf: OapsProfileAutoIsf?
+    var oapsProfileFCL: OapsProfileFCL?
     var mealData: MealData?
 
     val iob: IobTotal? get() = iobData?.get(0)
@@ -62,6 +63,7 @@ interface APSResult {
         UNKNOWN,
         AMA,
         SMB,
-        AUTO_ISF
+        AUTO_ISF,
+        FCL
     }
 }

@@ -221,4 +221,380 @@
     <string name="openapsama_iob_threshold_percent_summary" formatted="false">Percentage of maxIOB above which SMBs are disabled.\nDefault value: 100%\nWith 100% this feature is effectively disabled.</string>
     <string name="openapsama_iob_threshold_percent">maxIOB threshold percent for SMB\n(iob_threshold_percent)</string>
 
+
+    <!--    FCL vNext -->
+    <string name="openaps_fcl">FCL v4</string>
+
+
+
+    <string name="fcl_vnext_gain_day_title">Daggevoeligheid insuline</string>
+    <string name="fcl_vnext_gain_day_summary">Algemene sterkte van FCL vNext overdag.\nHoger = meer insuline per situatie.\nLager = behoudender en rustiger gedrag.</string>
+    <string name="fcl_vnext_gain_night_title">Nachtgevoeligheid insuline</string>
+    <string name="fcl_vnext_gain_night_summary">Algemene sterkte van FCL vNext tijdens de nacht.\nHoger = actiever corrigeren.\nLager = extra voorzichtig voor hypo-bescherming.</string>
+    <string name="max_bolus_day_title">Maximale bolus overdag</string>
+    <string name="max_bolus_day_summary">Maximale hoeveelheid insuline die FCL vNext in één actie overdag mag toedienen.\nBeperkt risico bij foutdetectie of ruis.</string>
+    <string name="max_bolus_night_title">Maximale bolus nacht</string>
+    <string name="max_bolus_night_summary">Maximale hoeveelheid insuline die FCL vNext ’s nachts in één actie mag toedienen.\nExtra bescherming tegen nachtelijke hypo’s.</string>
+
+    <string name="fcl_vnext_meal_strength_small_title">Kleine maaltijd</string>
+    <string name="fcl_vnext_meal_strength_small_summary">Versterkt of verzwakt FCL vNext bij een kleine maaltijd.\n1.0 = standaard.\nHoger = sneller en krachtiger reageren.\nLager = behoudender gedrag.</string>
+
+    <string name="fcl_vnext_meal_strength_normal_title">Normale maaltijd</string>
+    <string name="fcl_vnext_meal_strength_normal_summary">Versterkt of verzwakt FCL vNext bij een normale maaltijd.\n1.0 = standaard.\nHoger = sneller en krachtiger reageren.\nLager = behoudender gedrag.</string>
+    <string name="fcl_vnext_meal_strength_large_title">Grote maaltijd</string>
+    <string name="fcl_vnext_meal_strength_large_summary">Versterkt of verzwakt FCL vNext bij een grote maaltijd.\n1.0 = standaard.\nHoger = sneller en krachtiger reageren.\nLager = behoudender gedrag.</string>
+    <string name="fcl_vnext_meal_strength_snack_title">Snack / Borrelen</string>
+    <string name="fcl_vnext_meal_strength_snack_summary">FCL-reactie bij langdurig snacken of kleine koolhydraat-inname.\nLager = subtielere micro-correcties.\nHoger = sneller ingrijpen bij opstapeling.</string>
+
+
+    <string name="fcl_vnext_MaxIOB_summary">Maximale hoeveelheid acitieve insuline die aanwezig kan zijn.</string>
+    <string name="fcl_vnext_MaxIOB_title">Maximaal IOB</string>
+
+    <string name="fcl_vnext_bg_smoothing_alpha_title">BG smoothing factor</string>
+    <string name="fcl_vnext_bg_smoothing_alpha_summary">Mate van gladmaken van CGM-ruis vóór trendberekening.\nHoger = rustiger maar trager.\nLager = sneller maar gevoeliger.</string>
+
+    <string name="prebolus_small_title">Kleine maaltijd</string>
+    <string name="prebolus_small_summary">Vooraf toegediende bolus bij een kleine maaltijd.Wordt gebruikt zodra een stijging inzet na het indrukken van de maaltijdknop.</string>
+    <string name="prebolus_normal_title">Normale maaltijd</string>
+    <string name="prebolus_normal_summary">Vooraf toegediende bolus bij een normale maaltijd.Helpt snel IOB opbouwen zodra de glucose begint te stijgen.</string>
+    <string name="prebolus_large_title">Grote maaltijd</string>
+    <string name="prebolus_large_summary">Vooraf toegediende bolus bij een grote maaltijd.Alleen actief bij voldoende veiligheid (geen daling, geen hypo).</string>
+
+
+    <!-- ===============================
+     FCL vNext – Startpagina
+     =============================== -->
+    <string name="fcl_vnext_intro">  ●=●=●=●  </string>
+    <string name="fcl_vnext_intro_text1">
+FCL vNext is een geavanceerd algoritme dat automatisch insuline doseert op basis van het glucoseverloop, zonder dat je maaltijden of koolhydraten hoeft in te voeren.\n
+Het systeem kijkt continu naar trends, snelheid en betrouwbaarheid van de metingen en houdt rekening met context zoals dag/nacht, activiteit en insulineresistentie.\n
+De instellingen zijn bewust overzichtelijk gehouden en ingedeeld in drie groepen:</string>
+    <string name="fcl_vnext_intro_text2">
+• ⚙️ Gedrag &amp; veiligheid – hoe sterk FCL vNext mag ingrijpen.\n\n
+• 🧬 Profiel – hoe snel en wanneer het systeem corrigeert.\n\n
+• 🌙 🛡️ 🚶 Context – persoons afhankelijke instellingen.
+</string>
+    <string name="fcl_vnext_0_FCLvNext_algemeen_title">📄 Meer uitleg over FCL vNext</string>
+    <string name="fcl_vnext_0_FCLvNext_algemeen_summary">Klik hier voor een overzichtsdocument met uitleg over het algoritme, de filosofie en alle parameters.</string>
+    <string name="fcl_vnext_0_FCLvNext_algemeen_url">https://docs.google.com/document/d/14iTVM0uW8aYZgQYYRJaJ9O7XyiN9ZbAy/edit</string>
+    <string name="fcl_vnext_1_ALGEMEEN_GEDRAG_title">📄 Meer uitleg over algemene instellingen</string>
+    <string name="fcl_vnext_1_ALGEMEEN_GEDRAG_summary">Klik hier voor een overzichtsdocument met uitleg over algemene instellingen.</string>
+    <string name="fcl_vnext_1_ALGEMEEN_GEDRAG_url">https://docs.google.com/document/d/1YXV78ezLL6Y6t8FQpbooQwRzhgUX-edf/edit</string>
+    <string name="fcl_vnext_1_PROFIEL_title">📄 Meer uitleg over de profiel instellingen</string>
+    <string name="fcl_vnext_1_PROFIEL_summary">Klik hier voor een overzichtsdocument met uitleg over de profiel instellingen.</string>
+    <string name="fcl_vnext_2_PROFIEL_url">https://docs.google.com/document/d/1WmWsJnifSb4eehEfej61zBnSBF3eG5Of/edit</string>
+    <string name="fcl_vnext_1_CONTEXT_title">📄 Meer uitleg over de context instellingen</string>
+    <string name="fcl_vnext_1_CONTEXT_summary">Klik hier voor een overzichtsdocument met uitleg over de context instellingen.</string>
+    <string name="fcl_vnext_3_CONTEXT_url">https://docs.google.com/document/d/14i96WNNMVvGhCtEH-u_Tew3pPR4Y5v6b/edit</string>
+
+    <string name="fcl_vnext_4_MEAL_title">📄 Meer uitleg over de maaltijd instellingen</string>
+    <string name="fcl_vnext_4_MEAL_summary">Klik hier voor een overzichtsdocument met uitleg over de maaltijd instellingen.</string>
+    <string name="fcl_vnext_4_MEAL_url">https://docs.google.com/document/d/1qo9BumW5eVvhNSAlCLrSXqL1TLQVwZ1y/edit</string>
+
+    <!-- ===============================
+     Algemeen gedrag
+     =============================== -->
+
+    <string name="fcl_vnext_general_intro">Deze instellingen bepalen hoe actief FCL vNext insuline toedient bij stijgende glucosewaarden.\nWijzig deze parameters alleen als je begrijpt wat het effect is; kleine aanpassingen kunnen al merkbaar verschil maken.</string>
+    <string name="fcl_vnext_general_docs_title">📄 Uitleg Algemeen gedrag</string>
+    <string name="fcl_vnext_general_docs_summary">Uitgebreide uitleg over de doelstelling en werking van alle parameters binnen Algemeen gedrag.</string>
+    <string name="fcl_vnext_general_docs_url">https://docs.google.com/document/d/PLACEHOLDER_FCL_VNEXT_GENERAL</string>
+
+    <!-- ===============================
+         Profielen & context
+         =============================== -->
+
+    <string name="fcl_vnext_generic_choice_title">↳ keuzelijst</string>
+    <string name="fcl_vnext_profile_title">🔧 Height (correctiesterkte)</string>
+    <string name="fcl_vnext_profile_summary">Bepaalt hoe sterk FCL corrigeert (hoeveel insuline). Heeft GEEN invloed op timing of maaltijdherkenning. </string>
+
+    <string-array name="fcl_vnext_profile_entries">
+        <item>🛡️ Zeer voorzichtig (maximale veiligheid)</item>
+        <item>🧯 Voorzichtig</item>
+        <item>⚖️ Gebalanceerd (standaard)</item>
+        <item>🚀 Actief</item>
+        <item>🔥 Zeer actief (hoger corrigeren)</item>
+    </string-array>
+
+    <string-array name="fcl_vnext_profile_values">
+        <item>VERY_STRICT</item>
+        <item>STRICT</item>
+        <item>BALANCED</item>
+        <item>AGGRESSIVE</item>
+        <item>VERY_AGGRESSIVE</item>
+    </string-array>
+
+
+    <!-- ===============================
+     Timing (meal detect speed)
+     =============================== -->
+    <string name="fcl_vnext_meal_detect_speed_title">⏱️ Timing (reactietijd)</string>
+    <string name="fcl_vnext_meal_detect_speed_summary">Hoe vroeg FCL een stijging als “maaltijd” ziet en insuline afgeeft. Beïnvloedt TIMING, niet maximale dosis.</string>
+
+    <string-array name="fcl_vnext_meal_detect_speed_entries">
+        <item>🐢 Zeer laat (duidelijke stijging nodig)</item>
+        <item>🐌 Laat</item>
+        <item>⚖️ Normaal (standaard)</item>
+        <item>⚡ Snel</item>
+        <item>🚨 Zeer snel (snelste detectie)</item>
+    </string-array>
+
+    <string-array name="fcl_vnext_meal_detect_speed_values">
+        <item>VERY_SLOW</item>
+        <item>SLOW</item>
+        <item>MODERATE</item>
+        <item>FAST</item>
+        <item>VERY_FAST</item>
+    </string-array>
+
+    <!-- ===============================
+     Meal handling (treatment behaviour)
+     =============================== -->
+
+    <string name="fcl_vnext_meal_handling_title">🍽️ Maaltijd behandeling</string>
+    <string name="fcl_vnext_meal_handling_summary">Hoe krachtig FCL reageert tijdens de eerste stijging (WATCHING fase).Beïnvloedt vroege dosisopbouw, niet detectiesnelheid.</string>
+
+    <string-array name="fcl_vnext_meal_handling_entries">
+        <item>🛑 Zeer voorzichtig</item>
+        <item>🐢 Voorzichtig</item>
+        <item>⚖️ Gebalanceerd (standaard)</item>
+        <item>⚡ Anticiperend</item>
+        <item>🚀 Agressief</item>
+    </string-array>
+
+    <string-array name="fcl_vnext_meal_handling_values">
+        <item>VERY_CONSERVATIVE</item>
+        <item>CONSERVATIVE</item>
+        <item>BALANCED</item>
+        <item>ANTICIPATORY</item>
+        <item>AGGRESSIVE</item>
+    </string-array>
+
+
+    <!-- ===============================
+     Correctie gedrag (persistence)
+     =============================== -->
+    <string name="fcl_vnext_correction_style_title">🔁 Persistentie (volhoudendheid)</string>
+    <string name="fcl_vnext_correction_style_summary">
+Hoe volhardend FCL blijft corrigeren als glucose hoog blijft zonder actieve maaltijd.</string>
+
+    <string-array name="fcl_vnext_correction_style_entries">
+        <item>🛑 Zeer terughoudend (hypo-gevoelig)</item>
+        <item>🧯 Voorzichtig</item>
+        <item>⚖️ Normaal (standaard)</item>
+        <item>🔁 Vasthoudend</item>
+        <item>🔂 Zeer vasthoudend (resistentie / dawn)</item>
+    </string-array>
+
+    <string-array name="fcl_vnext_correction_style_values">
+        <item>VERY_CAUTIOUS</item>
+        <item>CAUTIOUS</item>
+        <item>NORMAL</item>
+        <item>PERSISTENT</item>
+        <item>VERY_PERSISTENT</item>
+    </string-array>
+
+    <!-- ===============================
+     Hypo Protection (Safety Axis)
+     =============================== -->
+
+    <string name="fcl_vnext_hypo_protection_title">🛡️ Hypo protectie (veiligheidsgevoeligheid)</string>
+
+    <string name="fcl_vnext_hypo_protection_summary">
+Bepaalt hoe streng FCL toekomstige lage glucose voorspellingen behandelt.
+Beïnvloedt alleen veiligheid, niet agressiviteit van stijgingscorrectie.
+</string>
+
+    <string-array name="fcl_vnext_hypo_protection_entries">
+        <item>🟢 Minimale bescherming (laat blokkade later ingrijpen)</item>
+        <item>🔵 Licht beschermend</item>
+        <item>⚖️ Gebalanceerd (standaard)</item>
+        <item>🟡 Verhoogde bescherming</item>
+        <item>🔴 Maximale bescherming</item>
+    </string-array>
+
+    <string-array name="fcl_vnext_hypo_protection_values">
+        <item>MINIMAL</item>
+        <item>RELAXED</item>
+        <item>BALANCED</item>
+        <item>SAFE</item>
+        <item>ULTRA_SAFE</item>
+    </string-array>
+
+
+    <!-- ===============================
+     Dosis verhouding gedrag
+     =============================== -->
+
+    <string name="fcl_vnext_dose_distribution_title">💉 Dose distribution</string>
+    <string name="fcl_vnext_dose_distribution_summary">Hoe insuline wordt verdeeld: meer basaal (smooth) of meer SMB (pulsen).</string>
+
+    <string-array name="fcl_vnext_dose_distribution_entries">
+        <item>🌊 Ultra smooth (bijna alleen basaal)</item>
+        <item>🫧 Smooth</item>
+        <item>⚖️ Balanced (standaard)</item>
+        <item>🔨 Pulsed</item>
+        <item>⚡ Ultra pulsed (korte, sterke SMB’s)</item>
+    </string-array>
+
+    <string-array name="fcl_vnext_dose_distribution_values">
+        <item>VERY_SMOOTH</item>
+        <item>SMOOTH</item>
+        <item>BALANCED</item>
+        <item>PULSED</item>
+        <item>VERY_PULSED</item>
+    </string-array>
+
+
+    <!-- ===============================
+     Resistentie (Auto-Sens)
+     =============================== -->
+
+
+    <string name="fcl_vnext_resistance_behavior_title">🛡️ AutoSens – Gedrag</string>
+    <string name="fcl_vnext_resistance_behavior_summary">Gedrag bepaalt hoe sterk AutoSens mag ingrijpen wanneer je glucose structureel boven of onder target ligt.</string>
+
+
+    <string-array name="fcl_vnext_resistance_behavior_entries">
+        <item>Uitgeschakeld</item>
+        <item>Licht</item>
+        <item>Normaal (aanbevolen)</item>
+        <item>Sterk</item>
+        <item>Agressief</item>
+    </string-array>
+
+    <string-array name="fcl_vnext_resistance_behavior_values">
+        <item>OFF</item>
+        <item>LIGHT</item>
+        <item>NORMAL</item>
+        <item>STRONG</item>
+        <item>AGGRESSIVE</item>
+    </string-array>
+
+    <string name="fcl_vnext_resistance_intro">
+AutoSens past automatisch de insulinegevoeligheid aan op basis van je glucoseverloop over meerdere dagen.
+Het systeem kijkt naar vaste tijdvensters, vergelijkt deze met je target en stuurt alleen bij als dat nodig is.
+</string>
+
+
+    <string name="fcl_vnext_resistance_stability_title">🧱 AutoSens – Stabiliteit</string>
+    <string name="fcl_vnext_resistance_stability_summary">
+Stabiliteit bepaalt hoeveel dagen en uren worden gebruikt om AutoSens te berekenen.
+Meer stabiliteit betekent rustiger gedrag, meer responsiviteit betekent sneller aanpassen.
+</string>
+
+    <string-array name="fcl_vnext_resistance_stability_entries">
+        <item>Zeer stabiel</item>
+        <item>Standaard</item>
+        <item>Responsief</item>
+    </string-array>
+
+    <string-array name="fcl_vnext_resistance_stability_values">
+        <item>VERY_STABLE</item>
+        <item>STANDARD</item>
+        <item>RESPONSIVE</item>
+    </string-array>
+
+
+
+
+    <string name="fcl_vnext_profiles_intro">Deze instellingen beschrijven jouw persoonlijke context.\nZe worden meestal éénmalig ingesteld en bepalen hoe FCL vNext zich aanpast aan dag/nacht, insulineresistentie en lichamelijke activiteit.</string>
+    <string name="fcl_vnext_profiles_docs_title">📄 Uitleg Profielen en context.</string>
+    <string name="fcl_vnext_profiles_docs_summary">Documentatie over dag/nacht-cyclus, resistentie en activiteit en hoe deze het algoritme beïnvloeden.</string>
+    <string name="fcl_vnext_profiles_docs_url">https://docs.google.com/document/d/PLACEHOLDER_FCL_VNEXT_PROFILES</string>
+
+    <!-- ===============================
+         Veiligheid & grenzen
+         =============================== -->
+
+    <string name="fcl_vnext_safety_intro">Deze instellingen beschermen tegen overdosering en zorgen dat FCL vNext automatisch afremt bij onzekerheid, hoge IOB of onbetrouwbare data.\nVoor de meeste gebruikers zijn de standaardwaarden veilig en voldoende.</string>
+    <string name="fcl_vnext_safety_docs_title">📄 Uitleg Veiligheid en grenzen.</string>
+    <string name="fcl_vnext_safety_docs_summary">Toelichting op alle veiligheidsmechanismen, IOB-remming en betrouwbaarheidscontroles.</string>
+    <string name="fcl_vnext_safety_docs_url">https://docs.google.com/document/d/PLACEHOLDER_FCL_VNEXT_SAFETY</string>
+
+    <!-- ===============================
+        Analyse & geavanceerd
+        =============================== -->
+
+    <string name="fcl_vnext_advanced_intro">Deze instellingen zijn bedoeld voor analyse, tuning en experimenteel gebruik.\nWijzig deze alleen als je CSV-logs analyseert of weet wat je doet.</string>
+    <string name="fcl_vnext_advanced_docs_title">📄 Uitleg Analyse en geavanceerd</string>
+    <string name="fcl_vnext_advanced_docs_summary">Achtergrondinformatie over filtering, absorptie/nasleep en expertinstellingen.</string>
+    <string name="fcl_vnext_advanced_docs_url">https://docs.google.com/document/d/PLACEHOLDER_FCL_VNEXT_ADVANCED</string>
+    <string name="fcl_vnext_toc_hint">Kies hieronder een hoofdstuk. Bovenaan elk hoofdstuk staat uitleg en een document-link, daaronder de instellingen.</string>
+
+    <string name="fcl_vnext_daynight_title">🌙 Dag / nacht</string>
+    <string name="fcl_vnext_daynight_intro">
+FCL vNext bepaalt automatisch of het dag of nacht is.
+Je stelt hier alleen tijdvakken en weekenddagen in.
+</string>
+
+    <string name="WeekendDagen_title">Weekenddagen</string>
+    <string name="WeekendDagen_summary">
+Selecteer de dagen die als weekend worden behandeld
+</string>
+
+    <string name="OchtendStart_title">Ochtendstart (doordeweeks)</string>
+    <string name="OchtendStart_summary">
+Tijdstip waarop FCL vNext overschakelt naar daginstellingen
+</string>
+
+    <string name="OchtendStartWeekend_title">Ochtendstart (weekend)</string>
+    <string name="OchtendStartWeekend_summary">
+Tijdstip waarop FCL vNext overschakelt naar daginstellingen in het weekend
+</string>
+
+    <string name="NachtStart_title">Nachtstart</string>
+    <string name="NachtStart_summary">
+Tijdstip waarop FCL vNext overschakelt naar nachtinstellingen
+</string>
+
+    <string-array name="weekday_entries">
+        <item>Maandag</item>
+        <item>Dinsdag</item>
+        <item>Woensdag</item>
+        <item>Donderdag</item>
+        <item>Vrijdag</item>
+        <item>Zaterdag</item>
+        <item>Zondag</item>
+    </string-array>
+
+    <string-array name="weekday_values">
+        <item>ma</item>
+        <item>di</item>
+        <item>wo</item>
+        <item>do</item>
+        <item>vr</item>
+        <item>za</item>
+        <item>zo</item>
+    </string-array>
+
+    <string name="fcl_vnext_activity_behavior_title">🚶 Activiteit</string>
+    <string name="fcl_vnext_activity_behavior_summary">
+Past automatisch insuline en target aan op basis van beweging
+</string>
+
+    <string name="fcl_vnext_activity_intro">
+Bij activering wordt, op basis van de stappenteller een TT ingesteld en de ISF verhoogd. Dit resulteert in minder insuline tijdens activiteit.\n
+Instellingen:\n
+Uit : Geen verandering\n
+Licht : Insuline 70%, TT +1,5mmol max 15 minuten naijl\n
+Normaal: Insuline 60%, TT +2,0mmol max 25 minuten naijl\n
+Sterk: Insuline 50%, TT +2,5mmol max 35 minuten naijl\n
+</string>
+
+    <string-array name="fcl_vnext_activity_behavior_entries">
+        <item>Uit</item>
+        <item>Licht</item>
+        <item>Normaal</item>
+        <item>Sterk</item>
+    </string-array>
+
+    <string-array name="fcl_vnext_activity_behavior_values">
+        <item>OFF</item>
+        <item>LIGHT</item>
+        <item>NORMAL</item>
+        <item>STRONG</item>
+    </string-array>
+
+    <string name="meal_intent">Toon maaltijd knop</string>
 </resources>
